@@ -74,6 +74,15 @@ const postOrder = async (
     userAddress: string
 ) => {
     const UserActivity = getUserActivityModel(userAddress);
+
+    if (ENV.PREVIEW_MODE) {
+        Logger.info(
+            `[PREVIEW] Would execute ${condition.toUpperCase()} — asset: ${trade.asset}, size: $${trade.usdcSize.toFixed(2)} @ $${trade.price}`
+        );
+        await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+        return;
+    }
+
     //Merge strategy
     if (condition === 'merge') {
         Logger.info('Executing MERGE strategy...');

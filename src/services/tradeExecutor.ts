@@ -160,40 +160,46 @@ const doTrading = async (clobClient: ClobClient, trades: TradeWithUser[]) => {
             transactionHash: trade.transactionHash,
         });
 
-        const my_positions: UserPositionInterface[] = await fetchData(
-            `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`
-        );
-        const user_positions: UserPositionInterface[] = await fetchData(
-            `https://data-api.polymarket.com/positions?user=${trade.userAddress}`
-        );
-        const my_position = my_positions.find(
-            (position: UserPositionInterface) => position.conditionId === trade.conditionId
-        );
-        const user_position = user_positions.find(
-            (position: UserPositionInterface) => position.conditionId === trade.conditionId
-        );
+        try {
+            const my_positions: UserPositionInterface[] = await fetchData(
+                `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`
+            );
+            const user_positions: UserPositionInterface[] = await fetchData(
+                `https://data-api.polymarket.com/positions?user=${trade.userAddress}`
+            );
+            const my_position = my_positions.find(
+                (position: UserPositionInterface) => position.conditionId === trade.conditionId
+            );
+            const user_position = user_positions.find(
+                (position: UserPositionInterface) => position.conditionId === trade.conditionId
+            );
 
-        // Get USDC balance
-        const my_balance = await getMyBalance(PROXY_WALLET);
+            // Get USDC balance
+            const my_balance = await getMyBalance(PROXY_WALLET);
 
-        // Calculate trader's total portfolio value from positions
-        const user_balance = user_positions.reduce((total, pos) => {
-            return total + (pos.currentValue || 0);
-        }, 0);
+            // Calculate trader's total portfolio value from positions
+            const user_balance = user_positions.reduce((total, pos) => {
+                return total + (pos.currentValue || 0);
+            }, 0);
 
-        Logger.balance(my_balance, user_balance, trade.userAddress);
+            Logger.balance(my_balance, user_balance, trade.userAddress);
 
-        // Execute the trade
-        await postOrder(
-            clobClient,
-            trade.side === 'BUY' ? 'buy' : 'sell',
-            my_position,
-            user_position,
-            trade,
-            my_balance,
-            user_balance,
-            trade.userAddress
-        );
+            // Execute the trade
+            await postOrder(
+                clobClient,
+                trade.side === 'BUY' ? 'buy' : 'sell',
+                my_position,
+                user_position,
+                trade,
+                my_balance,
+                user_balance,
+                trade.userAddress
+            );
+        } catch (err) {
+            // Reset in-progress marker so the trade is retried on the next poll cycle
+            await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 0 } });
+            Logger.error(`Trade execution failed, will retry: ${err}`);
+        }
 
         Logger.separator();
     }
@@ -216,48 +222,57 @@ const doAggregatedTrading = async (clobClient: ClobClient, aggregatedTrades: Agg
             await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 1 } });
         }
 
-        const my_positions: UserPositionInterface[] = await fetchData(
-            `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`
-        );
-        const user_positions: UserPositionInterface[] = await fetchData(
-            `https://data-api.polymarket.com/positions?user=${agg.userAddress}`
-        );
-        const my_position = my_positions.find(
-            (position: UserPositionInterface) => position.conditionId === agg.conditionId
-        );
-        const user_position = user_positions.find(
-            (position: UserPositionInterface) => position.conditionId === agg.conditionId
-        );
+        try {
+            const my_positions: UserPositionInterface[] = await fetchData(
+                `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`
+            );
+            const user_positions: UserPositionInterface[] = await fetchData(
+                `https://data-api.polymarket.com/positions?user=${agg.userAddress}`
+            );
+            const my_position = my_positions.find(
+                (position: UserPositionInterface) => position.conditionId === agg.conditionId
+            );
+            const user_position = user_positions.find(
+                (position: UserPositionInterface) => position.conditionId === agg.conditionId
+            );
 
-        // Get USDC balance
-        const my_balance = await getMyBalance(PROXY_WALLET);
+            // Get USDC balance
+            const my_balance = await getMyBalance(PROXY_WALLET);
 
-        // Calculate trader's total portfolio value from positions
-        const user_balance = user_positions.reduce((total, pos) => {
-            return total + (pos.currentValue || 0);
-        }, 0);
+            // Calculate trader's total portfolio value from positions
+            const user_balance = user_positions.reduce((total, pos) => {
+                return total + (pos.currentValue || 0);
+            }, 0);
 
-        Logger.balance(my_balance, user_balance, agg.userAddress);
+            Logger.balance(my_balance, user_balance, agg.userAddress);
 
-        // Create a synthetic trade object for postOrder using aggregated values
-        const syntheticTrade: UserActivityInterface = {
-            ...agg.trades[0], // Use first trade as template
-            usdcSize: agg.totalUsdcSize,
-            price: agg.averagePrice,
-            side: agg.side as 'BUY' | 'SELL',
-        };
+            // Create a synthetic trade object for postOrder using aggregated values
+            const syntheticTrade: UserActivityInterface = {
+                ...agg.trades[0], // Use first trade as template
+                usdcSize: agg.totalUsdcSize,
+                price: agg.averagePrice,
+                side: agg.side as 'BUY' | 'SELL',
+            };
 
-        // Execute the aggregated trade
-        await postOrder(
-            clobClient,
-            agg.side === 'BUY' ? 'buy' : 'sell',
-            my_position,
-            user_position,
-            syntheticTrade,
-            my_balance,
-            user_balance,
-            agg.userAddress
-        );
+            // Execute the aggregated trade
+            await postOrder(
+                clobClient,
+                agg.side === 'BUY' ? 'buy' : 'sell',
+                my_position,
+                user_position,
+                syntheticTrade,
+                my_balance,
+                user_balance,
+                agg.userAddress
+            );
+        } catch (err) {
+            // Reset in-progress marker on all constituent trades so they can be retried
+            for (const trade of agg.trades) {
+                const UserActivity = getUserActivityModel(trade.userAddress);
+                await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 0 } });
+            }
+            Logger.error(`Aggregated trade execution failed, will retry: ${err}`);
+        }
 
         Logger.separator();
     }
