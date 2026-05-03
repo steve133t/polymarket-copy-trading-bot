@@ -296,4 +296,5 @@ export const ENV = {
     // Auto-resolve settings (automatically sell positions at 100% or 0%)
     AUTO_RESOLVE_ENABLED: process.env.AUTO_RESOLVE_ENABLED === 'true',
     AUTO_RESOLVE_INTERVAL: parseInt(process.env.AUTO_RESOLVE_INTERVAL || '60', 10), // Check every 60s by default
+    PREVIEW_MODE: process.env.PREVIEW_MODE === 'true',
 };
