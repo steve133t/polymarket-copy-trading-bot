@@ -129,52 +129,40 @@ export default function Home() {
     }
   };
 
+  const navItems: { id: ViewMode; label: string }[] = [
+    { id: 'traders', label: 'Traders' },
+    { id: 'my-trades', label: 'My Trades' },
+    { id: 'paper', label: 'Paper' },
+    { id: 'settings', label: 'Settings' },
+  ];
+
   return (
     <div className="min-h-screen bg-background dark">
-      <div className="container mx-auto px-4 py-6">
-        {/* Header with Mode Toggle */}
-        <header className="mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-            <div>
-              <h1 className="text-3xl font-bold mb-1 tracking-tight">
-                {viewMode === 'settings' ? 'Bot Dashboard' : 'Trader Analytics'}
-              </h1>
-              <p className="text-sm text-muted-foreground">{getSubtitle()}</p>
-            </div>
+      {/* Sticky top nav — Polymarket-style */}
+      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-border">
+        <div className="container mx-auto px-4 md:px-8 flex items-center justify-between h-14">
+          <span className="font-semibold text-sm tracking-tight text-foreground">
+            Polymarket Bot
+          </span>
+          <nav className="flex items-center">
+            {navItems.map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setViewMode(id)}
+                className={`relative h-14 px-4 text-sm font-medium transition-colors ${
+                  viewMode === id
+                    ? 'text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary after:rounded-t'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
 
-            {/* Mode Toggle Buttons */}
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={viewMode === 'traders' ? 'default' : 'outline'}
-                onClick={() => setViewMode('traders')}
-              >
-                Traders
-              </Button>
-              <Button
-                size="sm"
-                variant={viewMode === 'my-trades' ? 'default' : 'outline'}
-                onClick={() => setViewMode('my-trades')}
-              >
-                My Trades
-              </Button>
-              <Button
-                size="sm"
-                variant={viewMode === 'paper' ? 'default' : 'outline'}
-                onClick={() => setViewMode('paper')}
-              >
-                📄 Paper
-              </Button>
-              <Button
-                size="sm"
-                variant={viewMode === 'settings' ? 'default' : 'outline'}
-                onClick={() => setViewMode('settings')}
-              >
-                Settings
-              </Button>
-            </div>
-          </div>
-        </header>
+      <div className="container mx-auto px-4 md:px-8 py-8">
 
         {viewMode === 'traders' && (
           <>
