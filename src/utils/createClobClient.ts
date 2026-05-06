@@ -15,16 +15,24 @@ const RPC_URL = ENV.RPC_URL as string;
 // A non-zero value here means it is a Gnosis Safe.
 const GNOSIS_SAFE_MASTER_COPY_SLOT = '0x0';
 
+// EIP-1967 standard slot for the implementation address (UUPS / transparent proxies).
+// Polymarket V2 proxy wallets use this pattern → signatureType POLY_1271 (3).
+// Polymarket V1 proxy wallets use the minimal-proxy pattern (no EIP-1967 slot) → POLY_PROXY (1).
+const EIP1967_IMPLEMENTATION_SLOT =
+    '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
+
 /**
  * Detects the Polymarket signature type for a wallet address:
  *
  *   EOA              (0) — no contract code
- *   POLY_PROXY       (1) — Polymarket proxy wallet (UUPS / minimal-proxy, slot 0 empty)
+ *   POLY_PROXY       (1) — Polymarket V1 proxy wallet (minimal-proxy, no EIP-1967 slot)
  *   POLY_GNOSIS_SAFE (2) — standard Gnosis Safe (slot 0 holds masterCopy address)
+ *   POLY_1271        (3) — Polymarket V2 proxy wallet (EIP-1967 UUPS, implements EIP-1271)
  *
- * Polymarket proxy wallets are deployed by Polymarket's factory and use EIP-1967
- * (UUPS) or the minimal-proxy pattern. They are NOT standard Gnosis Safes.
- * Using the wrong signature type causes "maker address not allowed" errors.
+ * Polymarket V2 proxy wallets are deployed using an EIP-1967 UUPS pattern and
+ * implement EIP-1271 (`isValidSignature`). Orders must use signatureType POLY_1271 (3)
+ * with signer = maker = proxy wallet address. Using POLY_PROXY (1) causes
+ * "maker address not allowed" errors from the CLOB backend.
  */
 const detectSignatureType = async (address: string): Promise<SignatureTypeV2> => {
     try {
@@ -40,7 +48,20 @@ const detectSignatureType = async (address: string): Promise<SignatureTypeV2> =>
         const masterCopy = '0x' + slot0.slice(-40); // last 20 bytes
         const isGnosisSafe = masterCopy !== '0x' + '0'.repeat(40);
 
-        return isGnosisSafe ? SignatureTypeV2.POLY_GNOSIS_SAFE : SignatureTypeV2.POLY_PROXY;
+        if (isGnosisSafe) {
+            return SignatureTypeV2.POLY_GNOSIS_SAFE;
+        }
+
+        // Polymarket V2 proxy wallets use EIP-1967 UUPS: their implementation address
+        // is stored in the standard EIP-1967 slot (non-zero). These wallets implement
+        // EIP-1271 and must use signatureType POLY_1271 (3).
+        // Polymarket V1 proxy wallets use the minimal-proxy pattern and have no
+        // EIP-1967 slot, so they fall through to POLY_PROXY (1).
+        const implSlot = await provider.getStorageAt(address, EIP1967_IMPLEMENTATION_SLOT);
+        const implAddress = '0x' + implSlot.slice(-40);
+        const hasEip1967Impl = implAddress !== '0x' + '0'.repeat(40);
+
+        return hasEip1967Impl ? SignatureTypeV2.POLY_1271 : SignatureTypeV2.POLY_PROXY;
     } catch (error) {
         Logger.error(`Error detecting wallet type: ${error}`);
         return SignatureTypeV2.EOA;
@@ -90,6 +111,7 @@ const createClobClient = async (): Promise<ClobClient> => {
         console.log = originalLog;
         console.error = originalErr;
     }
+    if (!creds?.key) throw new Error('Failed to obtain Polymarket API credentials');
 
     return new ClobClient({
         host: CLOB_HTTP_URL,
