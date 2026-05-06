@@ -48,7 +48,7 @@ export function VolumeSparkline({ traders, timeRange = 'all' }: VolumeSparklineP
 
   return (
     <div className="bg-card rounded-xl border p-3 flex flex-col h-full">
-      <span className="text-xs text-muted-foreground mb-1">Volume</span>
+      <span className="text-xs text-muted-foreground mb-1">Their Volume</span>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-lg font-bold font-mono">
           ${totalVolume >= 1000000

@@ -119,7 +119,7 @@ export default function Home() {
       case 'traders':
         return (
           <>
-            Analyzing {traders.length} traders | Last updated:{' '}
+            Tracking {traders.length} wallets · Last analyzed:{' '}
             {traders[0]?.analysisDate?.split('T')[0] || 'N/A'}
           </>
         );
@@ -189,7 +189,7 @@ export default function Home() {
             <StatusBar
               lastUpdated={traders[0]?.analysisDate}
               totalItems={traders.length}
-              itemLabel="traders"
+              itemLabel="tracked wallets"
               refreshing={refreshing}
               onRefresh={() => { fetchTraders(true); setCountdown(REFRESH_INTERVAL); }}
               countdown={countdown}

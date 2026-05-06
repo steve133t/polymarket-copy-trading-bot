@@ -47,7 +47,7 @@ export function ROIBarChart({ traders, compact = false, timeRange = 'all' }: ROI
     <Card className={compact ? 'h-full' : ''}>
       <CardHeader className={compact ? 'pb-2 pt-3 px-4' : ''}>
         <div className="flex items-center justify-between">
-          <CardTitle className={compact ? 'text-sm' : ''}>ROI</CardTitle>
+          <CardTitle className={compact ? 'text-sm' : ''}>Their ROI</CardTitle>
           <span
             className={`font-mono font-bold ${avgRoi >= 0 ? 'text-blue-500' : 'text-orange-500'} ${compact ? 'text-lg' : 'text-xl'}`}
           >
