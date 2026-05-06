@@ -21,6 +21,9 @@ export function MyTradesView() {
   const [datePreset, setDatePreset] = useState<DatePreset>('30d');
   const [customDateFrom, setCustomDateFrom] = useState<string>('');
   const [customDateTo, setCustomDateTo] = useState<string>('');
+  const [countdown, setCountdown] = useState(30);
+
+  const REFRESH_INTERVAL = 30;
 
   const fetchData = async (refresh = false) => {
     try {
@@ -47,6 +50,22 @@ export function MyTradesView() {
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  // Auto-refresh every 30 seconds with countdown
+  useEffect(() => {
+    let count = REFRESH_INTERVAL;
+    const tick = setInterval(() => {
+      count -= 1;
+      setCountdown(count);
+      if (count <= 0) {
+        fetchData(true);
+        count = REFRESH_INTERVAL;
+        setCountdown(REFRESH_INTERVAL);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Filter trades by date
@@ -214,7 +233,8 @@ export function MyTradesView() {
         totalItems={data?.allMyTrades.length}
         itemLabel="trades"
         refreshing={refreshing}
-        onRefresh={() => fetchData(true)}
+        onRefresh={() => { fetchData(true); setCountdown(REFRESH_INTERVAL); }}
+        countdown={countdown}
       />
 
       {/* Date Filter */}

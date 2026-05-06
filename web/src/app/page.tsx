@@ -30,6 +30,9 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [countdown, setCountdown] = useState(30);
+
+  const REFRESH_INTERVAL = 30;
 
   const fetchTraders = async (refresh = false) => {
     try {
@@ -56,6 +59,22 @@ export default function Home() {
 
   useEffect(() => {
     fetchTraders();
+  }, []);
+
+  // Auto-refresh every 30 seconds with countdown
+  useEffect(() => {
+    let count = REFRESH_INTERVAL;
+    const tick = setInterval(() => {
+      count -= 1;
+      setCountdown(count);
+      if (count <= 0) {
+        fetchTraders();
+        count = REFRESH_INTERVAL;
+        setCountdown(REFRESH_INTERVAL);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Show loading only for traders view initial load
@@ -166,7 +185,8 @@ export default function Home() {
               totalItems={traders.length}
               itemLabel="traders"
               refreshing={refreshing}
-              onRefresh={() => fetchTraders(true)}
+              onRefresh={() => { fetchTraders(true); setCountdown(REFRESH_INTERVAL); }}
+              countdown={countdown}
             />
               {error ? (
                 <p className="text-sm text-red-400">{error}</p>
