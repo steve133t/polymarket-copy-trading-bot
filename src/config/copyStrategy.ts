@@ -106,8 +106,12 @@ export function calculateOrderSize(
             throw new Error(`Unknown strategy: ${config.strategy}`);
     }
 
-    // Step 1.5: Apply tiered or single multiplier based on trader's order size
-    const multiplier = getTradeMultiplier(config, traderOrderSize);
+    // Step 1.5: Apply tiered or single multiplier based on trader's order size.
+    // BALANCE_PERCENT skips this — the percentage IS the sizing; a multiplier on
+    // top would be redundant and confusing (just change COPY_SIZE instead).
+    const multiplier = config.strategy === CopyStrategy.BALANCE_PERCENT
+        ? 1.0
+        : getTradeMultiplier(config, traderOrderSize);
     let finalAmount = baseAmount * multiplier;
 
     if (multiplier !== 1.0) {
