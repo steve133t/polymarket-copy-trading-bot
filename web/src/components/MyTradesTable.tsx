@@ -17,7 +17,7 @@ interface MyTradesTableProps {
   byTrader: TraderCopyStats[];
 }
 
-type SortKey = 'traderLabel' | 'pnl' | 'roi' | 'tradeCount' | 'totalBought';
+type SortKey = 'traderLabel' | 'netFlow' | 'avgCopyLagSeconds' | 'tradeCount' | 'totalBought';
 type SortDir = 'asc' | 'desc';
 
 export function MyTradesTable({ byTrader }: MyTradesTableProps) {
@@ -43,13 +43,13 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
         aVal = a.traderLabel.toLowerCase();
         bVal = b.traderLabel.toLowerCase();
         break;
-      case 'pnl':
-        aVal = a.pnl;
-        bVal = b.pnl;
+      case 'netFlow':
+        aVal = a.netFlow;
+        bVal = b.netFlow;
         break;
-      case 'roi':
-        aVal = a.roi;
-        bVal = b.roi;
+      case 'avgCopyLagSeconds':
+        aVal = a.avgCopyLagSeconds ?? Infinity;
+        bVal = b.avgCopyLagSeconds ?? Infinity;
         break;
       case 'tradeCount':
         aVal = a.tradeCount;
@@ -129,19 +129,19 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
               <TableHead className="text-right">
                 <SortButton
                   label="Net Flow"
-                  sortKeyName="pnl"
-                  title="Received minus Spent. Positive = more sold than bought so far."
+                  sortKeyName="netFlow"
+                  title="Received minus Spent. Positive = you've sold back more than you bought. Not P&L — open positions still hold value."
                 />
               </TableHead>
               <TableHead className="text-right">
                 <SortButton
-                  label="Cash ROI"
-                  sortKeyName="roi"
-                  title="Net Flow ÷ Spent. Based on cash flow only — doesn't include open position value."
+                  label="Avg Lag"
+                  sortKeyName="avgCopyLagSeconds"
+                  title="Average seconds between the trader's trade and your copy. Lower = faster execution."
                 />
               </TableHead>
-              <TableHead className="text-right" title="Average size per trade">
-                Avg Size
+              <TableHead className="text-right" title="Average USDC per buy order">
+                Avg Buy
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -182,21 +182,17 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
                   </TableCell>
                   <TableCell
                     className={`text-right font-mono ${
-                      trader.pnl >= 0 ? 'text-green-500' : 'text-red-500'
+                      trader.netFlow >= 0 ? 'text-green-500' : 'text-red-500'
                     }`}
                   >
-                    {trader.pnl >= 0 ? '+' : ''}{formatCurrency(trader.pnl)}
+                    {trader.netFlow >= 0 ? '+' : ''}{formatCurrency(trader.netFlow)}
                   </TableCell>
-                  <TableCell
-                    className={`text-right font-mono ${
-                      trader.roi >= 0 ? 'text-green-500' : 'text-red-500'
-                    }`}
-                  >
-                    {trader.roi >= 0 ? '+' : ''}{trader.roi.toFixed(1)}%
+                  <TableCell className="text-right font-mono">
+                    <CopyLagBadge seconds={trader.avgCopyLagSeconds ?? null} />
                   </TableCell>
                   <TableCell className="text-right font-mono text-muted-foreground">
-                    {trader.tradeCount > 0
-                      ? formatCurrency(trader.totalBought / trader.tradeCount)
+                    {trader.buyCount > 0
+                      ? formatCurrency(trader.avgBuySize)
                       : '-'}
                   </TableCell>
                 </TableRow>

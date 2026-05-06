@@ -125,10 +125,14 @@ export function MyTradesView() {
       const trades = byTraderMap.get(trader.address.toLowerCase()) || [];
       let totalBought = 0;
       let totalSold = 0;
+      let buyCount = 0;
+      let lagSum = 0;
+      let lagCount = 0;
 
       for (const trade of trades) {
-        if (trade.side === 'BUY') totalBought += trade.usdcSize;
+        if (trade.side === 'BUY') { totalBought += trade.usdcSize; buyCount++; }
         else totalSold += trade.usdcSize;
+        if (trade.timeDiff !== null) { lagSum += trade.timeDiff; lagCount++; }
       }
 
       return {
@@ -137,9 +141,11 @@ export function MyTradesView() {
         trades,
         totalBought,
         totalSold,
+        buyCount,
         tradeCount: trades.length,
-        pnl: totalSold - totalBought,
-        roi: totalBought > 0 ? ((totalSold - totalBought) / totalBought) * 100 : 0,
+        netFlow: totalSold - totalBought,
+        avgBuySize: buyCount > 0 ? totalBought / buyCount : 0,
+        avgCopyLagSeconds: lagCount > 0 ? Math.round(lagSum / lagCount) : null,
       };
     });
 
@@ -148,8 +154,9 @@ export function MyTradesView() {
     if (unmatchedTrades.length > 0) {
       let totalBought = 0;
       let totalSold = 0;
+      let buyCount = 0;
       for (const trade of unmatchedTrades) {
-        if (trade.side === 'BUY') totalBought += trade.usdcSize;
+        if (trade.side === 'BUY') { totalBought += trade.usdcSize; buyCount++; }
         else totalSold += trade.usdcSize;
       }
       byTrader.push({
@@ -158,9 +165,11 @@ export function MyTradesView() {
         trades: unmatchedTrades,
         totalBought,
         totalSold,
+        buyCount,
         tradeCount: unmatchedTrades.length,
-        pnl: totalSold - totalBought,
-        roi: totalBought > 0 ? ((totalSold - totalBought) / totalBought) * 100 : 0,
+        netFlow: totalSold - totalBought,
+        avgBuySize: buyCount > 0 ? totalBought / buyCount : 0,
+        avgCopyLagSeconds: null,
       });
     }
 
@@ -212,16 +221,22 @@ export function MyTradesView() {
     return null;
   }
 
-  // Use real P&L from positions if available, otherwise fallback to cash flow
-  const realPnL = data?.positions?.totalPnL ?? 0;
+  const totalPnL = data?.positions?.totalPnL ?? 0;
   const unrealizedPnL = data?.positions?.unrealizedPnL ?? 0;
   const realizedPnL = data?.positions?.realizedPnL ?? 0;
-  const cashFlowPnL = filteredData.byTrader.reduce((sum, t) => sum + t.pnl, 0);
 
   const matchRate =
     filteredData.summary.totalTrades > 0
       ? (filteredData.summary.matchedTrades / filteredData.summary.totalTrades) * 100
       : 0;
+
+  // Average copy lag across all matched trades in the filtered window
+  const matchedLags = filteredData.allMyTrades
+    .filter((t) => t.timeDiff !== null)
+    .map((t) => t.timeDiff as number);
+  const avgLagSeconds = matchedLags.length > 0
+    ? Math.round(matchedLags.reduce((a, b) => a + b, 0) / matchedLags.length)
+    : null;
 
   return (
     <>
@@ -278,86 +293,70 @@ export function MyTradesView() {
         </div>
       </Card>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-sm text-muted-foreground">My Wallet</p>
-          <p className="text-sm font-mono truncate" title={filteredData.myWallet}>
-            {filteredData.myWallet.slice(0, 8)}...{filteredData.myWallet.slice(-6)}
+      {/* P&L Hero — all-time from live positions, not date-filtered */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+        <div className="bg-card rounded-lg p-5 border md:col-span-2">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
+            Total P&L <span className="normal-case">(all positions, all-time)</span>
+          </p>
+          <p className={`text-4xl font-bold ${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            {totalPnL >= 0 ? '+' : '-'}${Math.abs(totalPnL).toFixed(2)}
+          </p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Unrealized {unrealizedPnL >= 0 ? '+' : '-'}${Math.abs(unrealizedPnL).toFixed(2)}
+            &nbsp;·&nbsp;
+            Realized {realizedPnL >= 0 ? '+' : '-'}${Math.abs(realizedPnL).toFixed(2)}
+          </p>
+          <p className="text-xs text-amber-500 mt-1">
+            ⚠ Positions data is always all-time — not filtered by the date selector above
           </p>
         </div>
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-sm text-muted-foreground">Total Trades (filtered)</p>
-          <p className="text-2xl font-bold">{filteredData.summary.totalTrades}</p>
+        <div className="bg-card rounded-lg p-5 border">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Open Positions</p>
+          <p className="text-3xl font-bold">{data?.positions?.total ?? 0}</p>
+          <p className="text-xs text-muted-foreground mt-2">
+            Value ${(data?.positions?.totalValue ?? 0).toFixed(2)}
+          </p>
         </div>
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-sm text-muted-foreground">Total Bought</p>
-          <p className="text-2xl font-bold">${filteredData.summary.totalBought.toFixed(2)}</p>
-        </div>
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-sm text-muted-foreground">Match Rate</p>
-          <p className="text-2xl font-bold">{matchRate.toFixed(1)}%</p>
-          <p className="text-xs text-muted-foreground">
-            {filteredData.summary.matchedTrades} / {filteredData.summary.totalTrades}
+        <div className="bg-card rounded-lg p-5 border">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">My Wallet</p>
+          <p className="text-sm font-mono mt-1" title={filteredData.myWallet}>
+            {filteredData.myWallet.slice(0, 8)}…{filteredData.myWallet.slice(-6)}
           </p>
         </div>
       </div>
 
-      {/* P&L Cards - Real data from positions */}
+      {/* Copy activity metrics — these ARE filtered by the date selector */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-card rounded-lg p-4 border">
-          <p className="text-sm text-muted-foreground">Total P&L (Real)</p>
-          <p
-            className={`text-2xl font-bold ${
-              realPnL >= 0 ? 'text-green-500' : 'text-red-500'
-            }`}
-          >
-            {realPnL >= 0 ? '+' : '-'}${Math.abs(realPnL).toFixed(2)}
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Trades Copied</p>
+          <p className="text-2xl font-bold">{filteredData.summary.totalTrades}</p>
+          <p className="text-xs text-muted-foreground mt-1">in selected period</p>
+        </div>
+        <div className="bg-card rounded-lg p-4 border">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Spent</p>
+          <p className="text-2xl font-bold">${filteredData.summary.totalBought.toFixed(2)}</p>
+          <p className="text-xs text-muted-foreground mt-1">USDC on buys</p>
+        </div>
+        <div className="bg-card rounded-lg p-4 border">
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Match Rate</p>
+          <p className="text-2xl font-bold">{matchRate.toFixed(1)}%</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {filteredData.summary.matchedTrades} / {filteredData.summary.totalTrades} traced to a trader
           </p>
         </div>
         <div className="bg-card rounded-lg p-4 border">
-          <p className="text-sm text-muted-foreground">Unrealized P&L</p>
-          <p
-            className={`text-2xl font-bold ${
-              unrealizedPnL >= 0 ? 'text-green-500' : 'text-red-500'
-            }`}
-          >
-            {unrealizedPnL >= 0 ? '+' : '-'}${Math.abs(unrealizedPnL).toFixed(2)}
+          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Avg Copy Lag</p>
+          <p className={`text-2xl font-bold ${
+            avgLagSeconds === null ? '' :
+            avgLagSeconds <= 10 ? 'text-green-500' :
+            avgLagSeconds <= 60 ? 'text-yellow-500' : 'text-red-400'
+          }`}>
+            {avgLagSeconds === null ? '—' : avgLagSeconds < 60 ? `${avgLagSeconds}s` : `${Math.round(avgLagSeconds / 60)}m`}
           </p>
-        </div>
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-sm text-muted-foreground">Realized P&L</p>
-          <p
-            className={`text-2xl font-bold ${
-              realizedPnL >= 0 ? 'text-green-500' : 'text-red-500'
-            }`}
-          >
-            {realizedPnL >= 0 ? '+' : '-'}${Math.abs(realizedPnL).toFixed(2)}
-          </p>
-        </div>
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-sm text-muted-foreground">Positions Value</p>
-          <p className="text-2xl font-bold">
-            ${(data?.positions?.totalValue ?? 0).toFixed(2)}
-          </p>
+          <p className="text-xs text-muted-foreground mt-1">median after trader</p>
         </div>
       </div>
-
-      {/* Cash Flow info (for reference) */}
-      <Card className="mb-6 p-4">
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-muted-foreground">Cash Flow (Sold - Bought):</span>
-          <span className={cashFlowPnL >= 0 ? 'text-green-500' : 'text-red-500'}>
-            {cashFlowPnL >= 0 ? '+' : '-'}${Math.abs(cashFlowPnL).toFixed(2)}
-          </span>
-          <span className="text-muted-foreground">|</span>
-          <span className="text-muted-foreground">Total Sold:</span>
-          <span>${filteredData.summary.totalSold.toFixed(2)}</span>
-          <span className="text-muted-foreground">|</span>
-          <span className="text-muted-foreground">Positions:</span>
-          <span>{data?.positions?.total ?? 0}</span>
-        </div>
-      </Card>
 
       {/* Charts Row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">

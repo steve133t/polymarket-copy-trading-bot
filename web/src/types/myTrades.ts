@@ -18,9 +18,11 @@ export interface TraderCopyStats {
   trades: CopyTrade[];
   totalBought: number;
   totalSold: number;
+  buyCount: number;
   tradeCount: number;
-  pnl: number;
-  roi: number;
+  netFlow: number;       // totalSold - totalBought (cash flow, not P&L)
+  avgBuySize: number;    // totalBought / buyCount
+  avgCopyLagSeconds: number | null;  // average seconds behind trader, matched trades only
 }
 
 export interface MyTradesResponse {
