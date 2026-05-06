@@ -23,7 +23,7 @@ export function CopyPnLBarChart({ byTrader }: CopyPnLBarChartProps) {
     .map((t) => ({
       name: t.traderLabel.length > 12 ? t.traderLabel.slice(0, 10) + '...' : t.traderLabel,
       fullName: t.traderLabel,
-      pnl: Number(t.pnl.toFixed(2)),
+      pnl: Number(t.netFlow.toFixed(2)),
       trades: t.tradeCount,
     }))
     .sort((a, b) => b.pnl - a.pnl);
@@ -31,7 +31,7 @@ export function CopyPnLBarChart({ byTrader }: CopyPnLBarChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>P&L by Copied Trader</CardTitle>
+        <CardTitle>Net Flow by Copied Trader</CardTitle>
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={400}>
@@ -68,7 +68,8 @@ export function CopyPnLBarChart({ byTrader }: CopyPnLBarChartProps) {
                 return label;
               }}
             />
-            <Bar dataKey="pnl" name="P&L ($)" radius={[4, 4, 0, 0]}>
+            <Bar
+                  isAnimationActive={false} dataKey="pnl" name="P&L ($)" radius={[4, 4, 0, 0]}>
               {data.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}

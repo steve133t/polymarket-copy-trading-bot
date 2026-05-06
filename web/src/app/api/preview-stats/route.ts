@@ -1,16 +1,32 @@
 import { NextResponse } from 'next/server';
 import { MongoClient } from 'mongodb';
 import * as fs from 'fs';
-import * as path from 'path';
+import { parseEnvValue, ENV_PATH } from '@/lib/envUtils';
 
 const MONGO_URI = process.env.MONGO_URI!;
-const ENV_PATH = path.join(process.cwd(), '..', '.env');
 
 const PAPER_SESSION_ID = 'default';
 const PAPER_SESSIONS_COLLECTION = 'paper_trading_sessions';
 const DEFAULT_STARTING_BALANCE = 100;
-const DEFAULT_COPY_STRATEGY = process.env.COPY_STRATEGY === 'PERCENTAGE' ? 'PERCENTAGE' : 'FIXED';
-const DEFAULT_COPY_SIZE = Number(process.env.COPY_SIZE) || 1;
+
+// Seed defaults from the bot's .env so the first paper session matches live config
+const _botStrategy = (() => {
+  const raw = (fs.existsSync(ENV_PATH)
+    ? parseEnvValue(fs.readFileSync(ENV_PATH, 'utf-8'), 'COPY_STRATEGY')
+    : process.env.COPY_STRATEGY || ''
+  ).trim().replace(/^['"]|['"]$/g, '').toUpperCase();
+  return raw === 'PERCENTAGE' ? 'PERCENTAGE' : raw === 'CAPITAL' ? 'CAPITAL' : 'FIXED';
+})() as 'FIXED' | 'PERCENTAGE' | 'CAPITAL';
+
+const _botCopySize = (() => {
+  const fromFile = fs.existsSync(ENV_PATH)
+    ? parseEnvValue(fs.readFileSync(ENV_PATH, 'utf-8'), 'COPY_SIZE')
+    : '';
+  return Number(fromFile || process.env.COPY_SIZE) || 5;
+})();
+
+const DEFAULT_COPY_STRATEGY = _botStrategy;
+const DEFAULT_COPY_SIZE = _botCopySize;
 const DEFAULT_MIN_BUY_SIZE = 1;
 const MAX_PAPER_TRADES = 5000;
 const MIN_BUY_USD = 1;
@@ -154,25 +170,6 @@ const getNumber = (value: unknown) => Number(value) || 0;
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 
 const clampPrice = (price: number) => Math.min(0.9999, Math.max(0.0001, price));
-
-const parseEnvValue = (content: string, key: string) => {
-  const line = content
-    .split('\n')
-    .find(envLine => envLine.trim().startsWith(`${key} =`) || envLine.trim().startsWith(`${key}=`));
-  if (!line) return '';
-
-  const equalIndex = line.indexOf('=');
-  let value = line.slice(equalIndex + 1).trim();
-  const commentIndex = value.indexOf(' #');
-  if (commentIndex !== -1) value = value.slice(0, commentIndex).trim();
-  if (
-    (value.startsWith("'") && value.endsWith("'")) ||
-    (value.startsWith('"') && value.endsWith('"'))
-  ) {
-    value = value.slice(1, -1);
-  }
-  return value;
-};
 
 const getUserAddresses = () => {
   const envAddresses = fs.existsSync(ENV_PATH)
@@ -533,7 +530,16 @@ function simulatePaperAccount(
     const rawPrice = clampPrice(getNumber(trade.botCopyPrice) || getNumber(trade.price));
     const executionPrice = getExecutionPrice(rawPrice, side, session);
     const trackedTokens = getTrackedTokens(trade);
-    const requestedSize = side === 'BUY' ? getRequestedBuySize(trade, session) : trackedTokens * executionPrice;
+
+    // When the bot ran in PREVIEW_MODE it already calculated the exact copy size —
+    // use those values for accuracy instead of re-deriving from session config.
+    const botCopySize = getNumber(trade.botCopySize);
+    const botCopyTokens = getNumber(trade.botCopyTokens);
+    const hasBotCalc = botCopySize > 0 && Boolean(trade.previewMode);
+
+    const requestedSize = side === 'BUY'
+      ? (hasBotCalc ? botCopySize : getRequestedBuySize(trade, session))
+      : trackedTokens * executionPrice;
 
     entry.markPrice = getExecutionPrice(rawPrice, 'SELL', session);
 
@@ -585,10 +591,13 @@ function simulatePaperAccount(
       const referenceSellPercent = reference.openTokens > 0
         ? Math.min(1, trackedTokens / reference.openTokens)
         : 0;
-      const sellTokens = Math.min(
-        walletPosition.openTokens * referenceSellPercent,
-        Math.max(0, walletPosition.openTokens)
-      );
+      // If bot already calculated the sell token amount, use it directly (capped by our paper position)
+      const sellTokens = hasBotCalc && botCopyTokens > 0
+        ? Math.min(botCopyTokens, Math.max(0, walletPosition.openTokens))
+        : Math.min(
+            walletPosition.openTokens * referenceSellPercent,
+            Math.max(0, walletPosition.openTokens)
+          );
 
       if (trackedTokens <= MIN_SELL_TOKENS || referenceSellPercent <= 0) {
         entry.skippedSells++;

@@ -144,7 +144,7 @@ export function QuickActionsSection({ healthCheck, onRefreshHealth, onAnalyzeCom
                 <Button
                   key={action}
                   variant={variant || 'default'}
-                  className="h-auto py-3 flex flex-col items-start text-left"
+                  className="h-auto py-3 flex flex-col items-start text-left whitespace-normal"
                   onClick={() => executeAction(action, undefined, onComplete)}
                   disabled={state.loading}
                 >

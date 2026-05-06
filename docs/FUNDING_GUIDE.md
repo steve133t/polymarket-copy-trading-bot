@@ -5,16 +5,17 @@ This guide will help you set up your wallet with the necessary funds and permiss
 ## Your Wallet Address
 
 ```
-0x4fbBe5599c06e846D2742014c9eB04A8a3d1DE8C
+<YOUR_PROXY_WALLET>
 ```
 
 ## Prerequisites
 
 Your trading wallet needs:
 
-1. **USDC** (for trading on Polymarket)
-2. **MATIC** (for gas fees on Polygon)
-3. **Allowance** (permission for Polymarket to spend your USDC)
+1. **pUSD** (Polymarket v2 collateral — deposit USDC via polymarket.com to get pUSD)
+2. **POL** (for gas fees on Polygon)
+3. **Allowance** (permission for Polymarket to spend your pUSD)
+4. **Wallet registration** (complete at least one deposit on polymarket.com — required for v2)
 
 ---
 
@@ -47,50 +48,37 @@ You need POL to pay for transaction fees on Polygon network.
 
 ---
 
-## Step 2: Get USDC on Polygon
+## Step 2: Get pUSD via Polymarket
 
-You need USDC (Polygon) for trading on Polymarket.
+Polymarket v2 uses **pUSD** as its collateral token — not USDC.e. You cannot buy or bridge pUSD directly. Instead, you deposit USDC (or USDC.e) through the Polymarket UI and it is automatically converted to pUSD for you.
 
 ### Recommended Amount
 
-- **Minimum:** $100 USDC (for testing)
-- **Recommended:** $500-1000 USDC (for meaningful trading)
+- **Minimum:** $100 (for testing)
+- **Recommended:** $500-1000 (for meaningful trading)
 
-### How to Get USDC on Polygon
+### How to Get pUSD
 
-**Option A: Centralized Exchange (Easiest)**
-
-1. Buy USDC on Coinbase, Binance, or Kraken
-2. Withdraw to your wallet address on **Polygon Network**
-3. ⚠️ **Important:** Select "Polygon" network to avoid high gas fees!
-
-**Option B: Bridge from Ethereum**
-
-1. Visit [Polygon Bridge](https://wallet.polygon.technology/polygon/bridge)
-2. Connect your wallet
-3. Bridge USDC from Ethereum to Polygon
-4. Wait ~7-8 minutes for confirmation
-
-**Option C: Buy Directly on Polygon**
-
-- [Transak](https://global.transak.com/) - Buy USDC directly on Polygon
-- [Ramp Network](https://ramp.network/) - Credit/Debit card purchases
+1. Go to [polymarket.com](https://polymarket.com) and connect your wallet
+2. Click your profile → **Deposit**
+3. Deposit USDC or USDC.e — Polymarket converts it to pUSD automatically
+4. The pUSD balance will appear in your Polymarket account and in your proxy wallet
 
 ### Important Notes
 
-✅ **Network**: Must be **Polygon** (also called "Polygon PoS"), NOT Ethereum mainnet
-✅ **Token**: USDC.e (bridged USDC) contract: `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`
-✅ **Gas Token**: POL (formerly MATIC) - both names are used
+✅ **No bridging needed**: Just deposit USDC via the Polymarket UI — done
+✅ **Token**: pUSD contract on Polygon: `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`
+✅ **Gas Token**: POL (formerly MATIC)
 
-⚠️ **Warning**: Sending USDC on the wrong network will result in loss of funds!
+⚠️ **Warning**: Do not attempt to acquire pUSD by swapping on a DEX — use the Polymarket deposit flow only.
 
 ---
 
-## Step 3: Set USDC Allowance for Polymarket ⚡ **CRITICAL STEP**
+## Step 3: Set pUSD Allowance for Polymarket ⚡ **CRITICAL STEP**
 
 **This is why you're getting "not enough balance / allowance" errors!**
 
-You must give Polymarket permission to spend your USDC. This is a one-time setup.
+You must give Polymarket permission to spend your pUSD. This is a one-time setup.
 
 ### Automatic Setup (Recommended)
 
@@ -108,7 +96,7 @@ yarn check-allowance
 
 This script will:
 
-1. ✅ Check your current USDC balance
+1. ✅ Check your current pUSD balance
 2. ✅ Check your current allowance
 3. ✅ Automatically set unlimited allowance if needed
 4. ✅ Show you the transaction link to verify
@@ -116,12 +104,12 @@ This script will:
 ### What the script does:
 
 ```
-🔍 Checking USDC balance and allowance...
+🔍 Checking pUSD balance and allowance...
 
-💵 USDC Decimals: 6
-💰 Your USDC Balance: 249.89 USDC
-✅ Current Allowance: 0 USDC
-📍 Polymarket Exchange: 0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E
+💵 pUSD Decimals: 6
+💰 Your pUSD Balance: 249.89 pUSD
+✅ Current Allowance: 0 pUSD
+📍 Polymarket Exchange: 0xE111180000d2663C0091e4f400237545B87B996B
 
 ⚠️  Allowance is insufficient or zero!
 📝 Setting unlimited allowance for Polymarket...
@@ -130,8 +118,20 @@ This script will:
 ⏳ Waiting for confirmation...
 
 ✅ Allowance set successfully!
-✅ New Allowance: 115792089237316195423570985008687907853269984665640564039457 USDC
+✅ New Allowance: 115792089237316195423570985008687907853269984665640564039457 pUSD
 ```
+
+---
+
+## Step 3.5: Register Your Wallet (v2 Required) ⚡ **CRITICAL STEP**
+
+Before the Polymarket CLOB will accept any orders from your proxy wallet, it must be registered through Polymarket's deposit flow. If you skip this, every order placement will return:
+
+```
+maker address not allowed, please use the deposit wallet flow
+```
+
+**Fix:** Log into [polymarket.com](https://polymarket.com) and complete at least one deposit. This registers your proxy wallet as an authorized maker automatically. You only need to do this once per wallet — subsequent runs of the bot will work without repeating it.
 
 ---
 
@@ -146,12 +146,12 @@ npm run check-allowance
 You should see:
 
 ```
-✅ Your USDC Balance: 249.89 USDC
-✅ Current Allowance: XXXXX USDC
+✅ Your pUSD Balance: 249.89 pUSD
+✅ Current Allowance: XXXXX pUSD
 ✅ Allowance is already sufficient!
 ```
 
-Check your wallet on [Polygonscan](https://polygonscan.com/address/0x4fbBe5599c06e846D2742014c9eB04A8a3d1DE8C)
+Check your wallet on [Polygonscan](https://polygonscan.com/address/<YOUR_PROXY_WALLET>)
 
 ---
 
@@ -161,12 +161,12 @@ Check your wallet on [Polygonscan](https://polygonscan.com/address/0x4fbBe5599c0
 
 **This is your current issue!**
 
-**Cause:** Either no USDC or no allowance set
+**Cause:** Either no pUSD or no allowance set
 
 **Solution:**
 
 1. Run `npm run check-allowance` to diagnose
-2. If balance is 0: Fund your wallet with USDC (see Step 2)
+2. If balance is 0: Deposit USDC via polymarket.com to get pUSD (see Step 2)
 3. If allowance is 0: The script will automatically set it
 4. You need POL for the approval transaction (~$0.01)
 
@@ -197,24 +197,24 @@ For smooth operation of the bot:
 
 | Asset    | Minimum      | Recommended   | Purpose         |
 | -------- | ------------ | ------------- | --------------- |
-| **USDC** | $100         | $500-1000     | Trading capital |
+| **pUSD** | $100         | $500-1000     | Trading capital |
 | **POL**  | 10 POL (~$5) | 50 POL (~$25) | Gas fees        |
 
-**Note:** With `TRADE_MULTIPLIER = 2.0`, your effective buying power is 2x your balance!
+**Tip:** Use `COPY_STRATEGY = FIXED` with a small `COPY_SIZE` (e.g. $5–$10) to control spending precisely. See the `TIERED_MULTIPLIERS` setting in `.env.example` if you need to scale up for large-volume traders.
 
 ---
 
 ## Quick Reference
 
-**Your Wallet:** `0x4fbBe5599c06e846D2742014c9eB04A8a3d1DE8C`
+**Your Wallet:** `<YOUR_PROXY_WALLET>`
 
 **Network:** Polygon (Chain ID: 137)
 
-**USDC Contract:** `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`
+**pUSD Contract:** `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`
 
-**Polymarket Exchange:** `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E`
+**Polymarket Exchange (v2):** `0xE111180000d2663C0091e4f400237545B87B996B`
 
-**Block Explorer:** [Polygonscan](https://polygonscan.com/address/0x4fbBe5599c06e846D2742014c9eB04A8a3d1DE8C)
+**Block Explorer:** [Polygonscan](https://polygonscan.com/address/<YOUR_PROXY_WALLET>)
 
 ---
 
@@ -223,7 +223,7 @@ For smooth operation of the bot:
 Once your wallet is funded and allowance is set:
 
 1. ✅ Run `npm run check-allowance` to verify
-2. ✅ Start the bot with `npm run dev`
+2. ✅ Start the bot with `npm start`
 3. ✅ Monitor the logs for successful trades
 4. ✅ Check your positions on [Polymarket](https://polymarket.com)
 

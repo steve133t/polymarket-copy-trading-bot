@@ -1,67 +1,14 @@
-import { ClobClient, OrderType, Side } from '@polymarket/clob-client';
+import { ClobClient, OrderType, Side } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 import { UserActivityInterface, UserPositionInterface } from '../interfaces/User';
 import { getUserActivityModel } from '../models/userHistory';
 import Logger from './logger';
 import { calculateOrderSize, getTradeMultiplier } from '../config/copyStrategy';
-
-const RETRY_LIMIT = ENV.RETRY_LIMIT;
-const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
-
-// Legacy parameters (for backward compatibility in SELL logic)
-const TRADE_MULTIPLIER = ENV.TRADE_MULTIPLIER;
-const COPY_PERCENTAGE = ENV.COPY_PERCENTAGE;
+import { extractOrderError, isInsufficientBalanceOrAllowanceError } from './orderUtils';
 
 // Polymarket minimum order sizes
 const MIN_ORDER_SIZE_USD = 1.0; // Minimum order size in USD for BUY orders
 const MIN_ORDER_SIZE_TOKENS = 1.0; // Minimum order size in tokens for SELL/MERGE orders
-
-const extractOrderError = (response: unknown): string | undefined => {
-    if (!response) {
-        return undefined;
-    }
-
-    if (typeof response === 'string') {
-        return response;
-    }
-
-    if (typeof response === 'object') {
-        const data = response as Record<string, unknown>;
-
-        const directError = data.error;
-        if (typeof directError === 'string') {
-            return directError;
-        }
-
-        if (typeof directError === 'object' && directError !== null) {
-            const nested = directError as Record<string, unknown>;
-            if (typeof nested.error === 'string') {
-                return nested.error;
-            }
-            if (typeof nested.message === 'string') {
-                return nested.message;
-            }
-        }
-
-        if (typeof data.errorMsg === 'string') {
-            return data.errorMsg;
-        }
-
-        if (typeof data.message === 'string') {
-            return data.message;
-        }
-    }
-
-    return undefined;
-};
-
-const isInsufficientBalanceOrAllowanceError = (message: string | undefined): boolean => {
-    if (!message) {
-        return false;
-    }
-    const lower = message.toLowerCase();
-    return lower.includes('not enough balance') || lower.includes('allowance');
-};
 
 const postOrder = async (
     clobClient: ClobClient,
@@ -81,7 +28,7 @@ const postOrder = async (
         let botCopyTokens = 0;
         if (condition === 'buy') {
             const currentPositionValue = my_position ? my_position.size * my_position.avgPrice : 0;
-            const orderCalc = calculateOrderSize(COPY_STRATEGY_CONFIG, trade.usdcSize, my_balance, currentPositionValue);
+            const orderCalc = calculateOrderSize(ENV.COPY_STRATEGY_CONFIG, trade.usdcSize, my_balance, currentPositionValue);
             botCopySize = orderCalc.finalAmount;
             botCopyTokens = trade.price > 0 ? botCopySize / trade.price : 0;
         } else {
@@ -100,7 +47,7 @@ const postOrder = async (
                 botCopyTokens = Math.max(0, paperTokens);
             } else if (paperTokens > 0) {
                 const traderSellPercent = trade.size / (user_position.size + trade.size);
-                const multiplier = getTradeMultiplier(COPY_STRATEGY_CONFIG, trade.usdcSize);
+                const multiplier = getTradeMultiplier(ENV.COPY_STRATEGY_CONFIG, trade.usdcSize);
                 botCopyTokens = Math.min(paperTokens, paperTokens * traderSellPercent * multiplier);
             }
             botCopySize = botCopyTokens * trade.price;
@@ -145,7 +92,7 @@ const postOrder = async (
 
         let retry = 0;
         let abortDueToFunds = false;
-        while (remaining > 0 && retry < RETRY_LIMIT) {
+        while (remaining > 0 && retry < ENV.RETRY_LIMIT) {
             const orderBook = await clobClient.getOrderBook(trade.asset);
             if (!orderBook.bids || orderBook.bids.length === 0) {
                 Logger.warning('No bids available in order book');
@@ -163,27 +110,27 @@ const postOrder = async (
                 order_arges = {
                     side: Side.SELL,
                     tokenID: my_position.asset,
-                    amount: remaining,
+                    size: remaining,
                     price: parseFloat(maxPriceBid.price),
                 };
             } else {
                 order_arges = {
                     side: Side.SELL,
                     tokenID: my_position.asset,
-                    amount: parseFloat(maxPriceBid.size),
+                    size: parseFloat(maxPriceBid.size),
                     price: parseFloat(maxPriceBid.price),
                 };
             }
             // Order args logged internally
-            const signedOrder = await clobClient.createMarketOrder(order_arges);
+            const signedOrder = await clobClient.createOrder(order_arges);
             const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
             if (resp.success === true) {
                 retry = 0;
                 Logger.orderResult(
                     true,
-                    `Sold ${order_arges.amount} tokens at $${order_arges.price}`
+                    `Sold ${order_arges.size} tokens at $${order_arges.price}`
                 );
-                remaining -= order_arges.amount;
+                remaining -= order_arges.size;
             } else {
                 const errorMessage = extractOrderError(resp);
                 if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
@@ -198,18 +145,18 @@ const postOrder = async (
                 }
                 retry += 1;
                 Logger.warning(
-                    `Order failed (attempt ${retry}/${RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
+                    `Order failed (attempt ${retry}/${ENV.RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
                 );
             }
         }
         if (abortDueToFunds) {
             await UserActivity.updateOne(
                 { _id: trade._id },
-                { bot: true, botExcutedTime: RETRY_LIMIT }
+                { bot: true, botExcutedTime: ENV.RETRY_LIMIT }
             );
             return;
         }
-        if (retry >= RETRY_LIMIT) {
+        if (retry >= ENV.RETRY_LIMIT) {
             await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
         } else {
             await UserActivity.updateOne({ _id: trade._id }, { bot: true });
@@ -226,7 +173,7 @@ const postOrder = async (
 
         // Use new copy strategy system
         const orderCalc = calculateOrderSize(
-            COPY_STRATEGY_CONFIG,
+            ENV.COPY_STRATEGY_CONFIG,
             trade.usdcSize,
             my_balance,
             currentPositionValue
@@ -251,7 +198,7 @@ const postOrder = async (
         let abortDueToFunds = false;
         let totalBoughtTokens = 0; // Track total tokens bought for this trade
 
-        while (remaining > 0 && retry < RETRY_LIMIT) {
+        while (remaining > 0 && retry < ENV.RETRY_LIMIT) {
             const orderBook = await clobClient.getOrderBook(trade.asset);
             if (!orderBook.asks || orderBook.asks.length === 0) {
                 Logger.warning('No asks available in order book');
@@ -288,7 +235,7 @@ const postOrder = async (
             const order_arges = {
                 side: Side.BUY,
                 tokenID: trade.asset,
-                amount: orderSize,
+                size: orderSize / parseFloat(minPriceAsk.price), // tokens = USD ÷ price
                 price: parseFloat(minPriceAsk.price),
             };
 
@@ -296,17 +243,17 @@ const postOrder = async (
                 `Creating order: $${orderSize.toFixed(2)} @ $${minPriceAsk.price} (Balance: $${my_balance.toFixed(2)})`
             );
             // Order args logged internally
-            const signedOrder = await clobClient.createMarketOrder(order_arges);
+            const signedOrder = await clobClient.createOrder(order_arges);
             const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
             if (resp.success === true) {
                 retry = 0;
-                const tokensBought = order_arges.amount / order_arges.price;
+                const tokensBought = order_arges.size;
                 totalBoughtTokens += tokensBought;
                 Logger.orderResult(
                     true,
-                    `Bought $${order_arges.amount.toFixed(2)} at $${order_arges.price} (${tokensBought.toFixed(2)} tokens)`
+                    `Bought $${orderSize.toFixed(2)} at $${order_arges.price} (${tokensBought.toFixed(2)} tokens)`
                 );
-                remaining -= order_arges.amount;
+                remaining -= orderSize;
             } else {
                 const errorMessage = extractOrderError(resp);
                 if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
@@ -321,18 +268,18 @@ const postOrder = async (
                 }
                 retry += 1;
                 Logger.warning(
-                    `Order failed (attempt ${retry}/${RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
+                    `Order failed (attempt ${retry}/${ENV.RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
                 );
             }
         }
         if (abortDueToFunds) {
             await UserActivity.updateOne(
                 { _id: trade._id },
-                { bot: true, botExcutedTime: RETRY_LIMIT, myBoughtSize: totalBoughtTokens }
+                { bot: true, botExcutedTime: ENV.RETRY_LIMIT, myBoughtSize: totalBoughtTokens }
             );
             return;
         }
-        if (retry >= RETRY_LIMIT) {
+        if (retry >= ENV.RETRY_LIMIT) {
             await UserActivity.updateOne(
                 { _id: trade._id },
                 { bot: true, botExcutedTime: retry, myBoughtSize: totalBoughtTokens }
@@ -413,7 +360,7 @@ const postOrder = async (
             }
 
             // Apply tiered or single multiplier based on trader's order size (symmetrical with BUY logic)
-            const multiplier = getTradeMultiplier(COPY_STRATEGY_CONFIG, trade.usdcSize);
+            const multiplier = getTradeMultiplier(ENV.COPY_STRATEGY_CONFIG, trade.usdcSize);
             remaining = baseSellSize * multiplier;
 
             if (multiplier !== 1.0) {
@@ -446,7 +393,7 @@ const postOrder = async (
         let abortDueToFunds = false;
         let totalSoldTokens = 0; // Track total tokens sold
 
-        while (remaining > 0 && retry < RETRY_LIMIT) {
+        while (remaining > 0 && retry < ENV.RETRY_LIMIT) {
             const orderBook = await clobClient.getOrderBook(trade.asset);
             if (!orderBook.bids || orderBook.bids.length === 0) {
                 await UserActivity.updateOne({ _id: trade._id }, { bot: true });
@@ -483,20 +430,20 @@ const postOrder = async (
             const order_arges = {
                 side: Side.SELL,
                 tokenID: trade.asset,
-                amount: sellAmount,
+                size: sellAmount, // already in tokens
                 price: parseFloat(maxPriceBid.price),
             };
             // Order args logged internally
-            const signedOrder = await clobClient.createMarketOrder(order_arges);
+            const signedOrder = await clobClient.createOrder(order_arges);
             const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
             if (resp.success === true) {
                 retry = 0;
-                totalSoldTokens += order_arges.amount;
+                totalSoldTokens += order_arges.size;
                 Logger.orderResult(
                     true,
-                    `Sold ${order_arges.amount} tokens at $${order_arges.price}`
+                    `Sold ${order_arges.size} tokens at $${order_arges.price}`
                 );
-                remaining -= order_arges.amount;
+                remaining -= order_arges.size;
             } else {
                 const errorMessage = extractOrderError(resp);
                 if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
@@ -511,7 +458,7 @@ const postOrder = async (
                 }
                 retry += 1;
                 Logger.warning(
-                    `Order failed (attempt ${retry}/${RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
+                    `Order failed (attempt ${retry}/${ENV.RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
                 );
             }
         }
@@ -553,11 +500,11 @@ const postOrder = async (
         if (abortDueToFunds) {
             await UserActivity.updateOne(
                 { _id: trade._id },
-                { bot: true, botExcutedTime: RETRY_LIMIT }
+                { bot: true, botExcutedTime: ENV.RETRY_LIMIT }
             );
             return;
         }
-        if (retry >= RETRY_LIMIT) {
+        if (retry >= ENV.RETRY_LIMIT) {
             await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
         } else {
             await UserActivity.updateOne({ _id: trade._id }, { bot: true });

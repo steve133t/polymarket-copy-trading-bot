@@ -1,12 +1,11 @@
 import connectDB, { closeDB } from './config/db';
-import { ENV } from './config/env';
+import { ENV, reloadConfig } from './config/env';
 import createClobClient from './utils/createClobClient';
 import tradeExecutor, { stopTradeExecutor } from './services/tradeExecutor';
 import tradeMonitor, { stopTradeMonitor } from './services/tradeMonitor';
-import autoResolver, { stopAutoResolver } from './services/autoResolver';
+import { startHeartbeat, stopHeartbeat } from './services/heartbeat';
 import Logger from './utils/logger';
 import { performHealthCheck, logHealthCheck } from './utils/healthCheck';
-import test from './test/test';
 
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const PROXY_WALLET = ENV.PROXY_WALLET;
@@ -28,7 +27,7 @@ const gracefulShutdown = async (signal: string) => {
         // Stop services
         stopTradeMonitor();
         stopTradeExecutor();
-        stopAutoResolver();
+        stopHeartbeat();
 
         // Give services time to finish current operations
         Logger.info('Waiting for services to finish current operations...');
@@ -64,6 +63,19 @@ process.on('uncaughtException', (error: Error) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// Handle config hot-reload (sent by web UI after saving settings)
+process.on('SIGHUP', () => {
+    Logger.info('SIGHUP received — reloading configuration...');
+    try {
+        reloadConfig();
+        Logger.success('Configuration reloaded. New settings are active immediately.');
+        Logger.info(`  Strategy: ${ENV.COPY_STRATEGY_CONFIG.strategy}, Size: ${ENV.COPY_STRATEGY_CONFIG.copySize}`);
+        Logger.info(`  Preview mode: ${ENV.PREVIEW_MODE}`);
+    } catch (err) {
+        Logger.error(`Config reload failed: ${err}`);
+    }
+});
+
 export const main = async () => {
     try {
         await connectDB();
@@ -89,8 +101,8 @@ export const main = async () => {
         Logger.info('Starting trade executor...');
         tradeExecutor(clobClient);
 
-        Logger.info('Starting auto resolver...');
-        autoResolver(clobClient);
+        Logger.info('Starting heartbeat...');
+        startHeartbeat();
 
         // test(clobClient);
     } catch (error) {

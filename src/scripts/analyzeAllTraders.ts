@@ -152,8 +152,8 @@ const fetchProfile = async (address: string): Promise<{ name?: string; username?
 };
 
 const analyzeTrader = async (address: string, label: string): Promise<TraderAnalysis> => {
-    console.log(`\n📊 Анализ: ${label}`);
-    console.log(`   Адрес: ${address}`);
+    console.log(`\n📊 Analyzing: ${label}`);
+    console.log(`   Address: ${address}`);
 
     // Fetch data
     const [trades, positions, profile] = await Promise.all([
@@ -163,11 +163,11 @@ const analyzeTrader = async (address: string, label: string): Promise<TraderAnal
     ]);
 
     const displayLabel = profile?.username ? `@${profile.username}` : label;
-    console.log(`   Профиль: ${profile?.username || 'не найден'}`);
-    console.log(`   Сделок: ${trades.length}, Позиций: ${positions.length}`);
+    console.log(`   Profile: ${profile?.username || 'not found'}`);
+    console.log(`   Trades: ${trades.length}, Positions: ${positions.length}`);
 
     // Use all trades (no date filter - filter on frontend if needed)
-    console.log(`   Всего сделок за всё время: ${trades.length}`);
+    console.log(`   Total trades all time: ${trades.length}`);
 
     // Sort trades
     trades.sort((a, b) => a.timestamp - b.timestamp);
@@ -378,63 +378,63 @@ const generateReport = (analysis: TraderAnalysis): string => {
     let report = '';
 
     report += `${'═'.repeat(70)}\n`;
-    report += `📊 АНАЛИЗ ТРЕЙДЕРА: ${analysis.label}\n`;
+    report += `📊 TRADER ANALYSIS: ${analysis.label}\n`;
     report += `${'═'.repeat(70)}\n\n`;
 
-    report += `Адрес: ${analysis.address}\n`;
-    report += `Дата анализа: ${analysis.analysisDate.split('T')[0]}\n`;
-    report += `Период: ${analysis.periodMonths} мес. (всё время)\n`;
-    report += `Профиль: https://polymarket.com/profile/${analysis.address}\n\n`;
+    report += `Address: ${analysis.address}\n`;
+    report += `Analysis Date: ${analysis.analysisDate.split('T')[0]}\n`;
+    report += `Period: ${analysis.periodMonths} months (all time)\n`;
+    report += `Profile: https://polymarket.com/profile/${analysis.address}\n\n`;
 
     report += `${'─'.repeat(70)}\n`;
-    report += `📈 ТОРГОВАЯ АКТИВНОСТЬ\n`;
+    report += `📈 TRADING ACTIVITY\n`;
     report += `${'─'.repeat(70)}\n`;
-    report += `Всего сделок:      ${analysis.trades.total}\n`;
-    report += `  - Покупок:       ${analysis.trades.buys}\n`;
-    report += `  - Продаж:        ${analysis.trades.sells}\n`;
-    report += `Первая сделка:     ${analysis.trades.firstTrade}\n`;
-    report += `Последняя сделка:  ${analysis.trades.lastTrade}\n`;
-    report += `Дней активности:   ${analysis.trades.daysActive}\n\n`;
+    report += `Total trades:      ${analysis.trades.total}\n`;
+    report += `  - Buys:          ${analysis.trades.buys}\n`;
+    report += `  - Sells:         ${analysis.trades.sells}\n`;
+    report += `First trade:       ${analysis.trades.firstTrade}\n`;
+    report += `Last trade:        ${analysis.trades.lastTrade}\n`;
+    report += `Days active:       ${analysis.trades.daysActive}\n\n`;
 
     report += `${'─'.repeat(70)}\n`;
-    report += `💰 ОБЪЁМЫ\n`;
+    report += `💰 VOLUME\n`;
     report += `${'─'.repeat(70)}\n`;
-    report += `Всего куплено:     $${analysis.volume.totalBought.toFixed(2)}\n`;
-    report += `Всего продано:     $${analysis.volume.totalSold.toFixed(2)}\n`;
-    report += `Нетто поток:       $${analysis.volume.netFlow.toFixed(2)}\n\n`;
+    report += `Total bought:      $${analysis.volume.totalBought.toFixed(2)}\n`;
+    report += `Total sold:        $${analysis.volume.totalSold.toFixed(2)}\n`;
+    report += `Net flow:          $${analysis.volume.netFlow.toFixed(2)}\n\n`;
 
     report += `${'─'.repeat(70)}\n`;
-    report += `📊 ПОЗИЦИИ\n`;
+    report += `📊 POSITIONS\n`;
     report += `${'─'.repeat(70)}\n`;
-    report += `Всего позиций:     ${analysis.positions.total}\n`;
-    report += `Открытых:          ${analysis.positions.open}\n`;
-    report += `Прибыльных:        ${analysis.positions.winners} (${analysis.positions.winRate.toFixed(0)}%)\n`;
-    report += `Убыточных:         ${analysis.positions.losers}\n`;
-    report += `Нач. стоимость:    $${analysis.positions.initialValue.toFixed(2)}\n`;
-    report += `Текущ. стоимость:  $${analysis.positions.currentValue.toFixed(2)}\n\n`;
+    report += `Total positions:   ${analysis.positions.total}\n`;
+    report += `Open:              ${analysis.positions.open}\n`;
+    report += `Winners:           ${analysis.positions.winners} (${analysis.positions.winRate.toFixed(0)}%)\n`;
+    report += `Losers:            ${analysis.positions.losers}\n`;
+    report += `Initial value:     $${analysis.positions.initialValue.toFixed(2)}\n`;
+    report += `Current value:     $${analysis.positions.currentValue.toFixed(2)}\n\n`;
 
     report += `${'─'.repeat(70)}\n`;
-    report += `💵 ПРИБЫЛЬ/УБЫТОК\n`;
+    report += `💵 PROFIT / LOSS\n`;
     report += `${'─'.repeat(70)}\n`;
-    report += `Нереализованная:   $${analysis.pnl.unrealized.toFixed(2)}\n`;
-    report += `Реализованная:     $${analysis.pnl.realized.toFixed(2)}\n`;
-    report += `ОБЩИЙ P&L:         $${analysis.pnl.total.toFixed(2)}\n`;
+    report += `Unrealized:        $${analysis.pnl.unrealized.toFixed(2)}\n`;
+    report += `Realized:          $${analysis.pnl.realized.toFixed(2)}\n`;
+    report += `TOTAL P&L:         $${analysis.pnl.total.toFixed(2)}\n`;
     report += `ROI:               ${analysis.pnl.roi.toFixed(2)}%\n`;
-    report += `Месячный ROI:      ${analysis.pnl.monthlyRoi.toFixed(2)}%\n`;
-    report += `Годовой ROI:       ${analysis.pnl.annualizedRoi.toFixed(2)}%\n\n`;
+    report += `Monthly ROI:       ${analysis.pnl.monthlyRoi.toFixed(2)}%\n`;
+    report += `Annualized ROI:    ${analysis.pnl.annualizedRoi.toFixed(2)}%\n\n`;
 
     if (analysis.redeemable.count > 0) {
         report += `${'─'.repeat(70)}\n`;
-        report += `🎁 К ВЫВОДУ (Redeemable)\n`;
+        report += `🎁 REDEEMABLE\n`;
         report += `${'─'.repeat(70)}\n`;
-        report += `Позиций:           ${analysis.redeemable.count}\n`;
-        report += `Сумма:             $${analysis.redeemable.value.toFixed(2)}\n\n`;
+        report += `Positions:         ${analysis.redeemable.count}\n`;
+        report += `Value:             $${analysis.redeemable.value.toFixed(2)}\n\n`;
     }
 
     report += `${'─'.repeat(70)}\n`;
-    report += `📅 ПОМЕСЯЧНАЯ РАЗБИВКА\n`;
+    report += `📅 MONTHLY BREAKDOWN\n`;
     report += `${'─'.repeat(70)}\n`;
-    report += `Месяц      | Куплено    | Продано    | Баланс     | Сделок\n`;
+    report += `Month      | Bought     | Sold       | Net        | Trades\n`;
     report += `${'─'.repeat(70)}\n`;
 
     for (const m of analysis.monthlyBreakdown) {
@@ -445,7 +445,7 @@ const generateReport = (analysis: TraderAnalysis): string => {
 
     if (analysis.topWinners.length > 0) {
         report += `${'─'.repeat(70)}\n`;
-        report += `✅ ТОП-5 ПРИБЫЛЬНЫХ ПОЗИЦИЙ\n`;
+        report += `✅ TOP 5 WINNING POSITIONS\n`;
         report += `${'─'.repeat(70)}\n`;
         for (const w of analysis.topWinners) {
             report += `+$${w.pnl.toFixed(2).padStart(8)} | ${w.title.substring(0, 45)} (${w.outcome})\n`;
@@ -455,7 +455,7 @@ const generateReport = (analysis: TraderAnalysis): string => {
 
     if (analysis.topLosers.length > 0) {
         report += `${'─'.repeat(70)}\n`;
-        report += `❌ ТОП-5 УБЫТОЧНЫХ ПОЗИЦИЙ\n`;
+        report += `❌ TOP 5 LOSING POSITIONS\n`;
         report += `${'─'.repeat(70)}\n`;
         for (const l of analysis.topLosers) {
             report += `$${l.pnl.toFixed(2).padStart(9)} | ${l.title.substring(0, 45)} (${l.outcome})\n`;
@@ -469,7 +469,7 @@ const generateReport = (analysis: TraderAnalysis): string => {
 };
 
 const main = async () => {
-    console.log('🔍 АНАЛИЗ ВСЕХ ТРЕЙДЕРОВ');
+    console.log('🔍 ANALYZING ALL TRADERS');
     console.log('═'.repeat(60));
 
     // Get traders to analyze
@@ -488,7 +488,7 @@ const main = async () => {
         })),
     ];
 
-    console.log(`\nАнализируем ${allAddresses.length} адресов:`);
+    console.log(`\nAnalyzing ${allAddresses.length} addresses:`);
     allAddresses.forEach((a) => console.log(`  - ${a.label}: ${a.address.slice(0, 10)}...`));
 
     // Create output directory
@@ -496,7 +496,7 @@ const main = async () => {
     if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
     }
-    console.log(`\n📁 Результаты будут сохранены в: ${outputDir}`);
+    console.log(`\n📁 Results will be saved to: ${outputDir}`);
 
     // Analyze each trader
     const allAnalyses: TraderAnalysis[] = [];
@@ -515,18 +515,18 @@ const main = async () => {
             const jsonFilename = `${address.slice(0, 10)}_${label.replace(/[^a-zA-Z0-9]/g, '_')}.json`;
             fs.writeFileSync(path.join(outputDir, jsonFilename), JSON.stringify(analysis, null, 2));
 
-            console.log(`   ✅ Сохранено: ${filename}`);
+            console.log(`   ✅ Saved: ${filename}`);
         } catch (error) {
-            console.error(`   ❌ Ошибка анализа ${label}: ${error}`);
+            console.error(`   ❌ Error analyzing ${label}: ${error}`);
         }
     }
 
     // Generate summary report
     console.log('\n' + '═'.repeat(60));
-    console.log('📊 СВОДНАЯ ТАБЛИЦА ТРЕЙДЕРОВ');
+    console.log('📊 TRADER SUMMARY TABLE');
     console.log('═'.repeat(60));
     console.log(
-        '\nТрейдер              | Сделок | Объём      | P&L        | ROI%   | Win%'
+        '\nTrader               | Trades | Volume     | P&L        | ROI%   | Win%'
     );
     console.log('─'.repeat(80));
 
@@ -546,13 +546,13 @@ const main = async () => {
     console.log('─'.repeat(80));
 
     // Save summary
-    let summaryReport = '📊 СВОДНЫЙ ОТЧЁТ ПО ВСЕМ ТРЕЙДЕРАМ\n';
-    summaryReport += `Дата: ${new Date().toISOString().split('T')[0]}\n`;
-    summaryReport += `Период: всё время\n\n`;
+    let summaryReport = '📊 SUMMARY REPORT - ALL TRADERS\n';
+    summaryReport += `Date: ${new Date().toISOString().split('T')[0]}\n`;
+    summaryReport += `Period: all time\n\n`;
 
-    summaryReport += 'РЕЙТИНГ ПО ROI:\n';
+    summaryReport += 'RANKED BY ROI:\n';
     summaryReport += '═'.repeat(80) + '\n';
-    summaryReport += 'Место | Трейдер              | Сделок | Объём      | P&L        | ROI%   | Win%\n';
+    summaryReport += 'Rank  | Trader               | Trades | Volume     | P&L        | ROI%   | Win%\n';
     summaryReport += '─'.repeat(80) + '\n';
 
     allAnalyses.forEach((a, i) => {
@@ -572,14 +572,14 @@ const main = async () => {
     fs.writeFileSync(path.join(outputDir, '_SUMMARY.txt'), summaryReport);
     fs.writeFileSync(path.join(outputDir, '_SUMMARY.json'), JSON.stringify(allAnalyses, null, 2));
 
-    console.log(`\n✅ Все отчёты сохранены в: ${outputDir}`);
-    console.log('   - Индивидуальные отчёты (.txt и .json)');
-    console.log('   - Сводный отчёт (_SUMMARY.txt и _SUMMARY.json)');
+    console.log(`\n✅ All reports saved to: ${outputDir}`);
+    console.log('   - Individual reports (.txt and .json)');
+    console.log('   - Summary report (_SUMMARY.txt and _SUMMARY.json)');
 };
 
 main()
     .then(() => process.exit(0))
     .catch((error) => {
-        console.error('❌ Ошибка:', error);
+        console.error('❌ Error:', error);
         process.exit(1);
     });

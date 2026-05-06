@@ -9,10 +9,10 @@ Before starting, ensure you have:
 - ✅ **Node.js v18+** - [Download here](https://nodejs.org/)
 - ✅ **MongoDB Database** - [Free tier on MongoDB Atlas](https://www.mongodb.com/cloud/atlas/register)
 - ✅ **Polygon Wallet** - MetaMask or any Web3 wallet
-- ✅ **USDC on Polygon** - For executing trades
-- ✅ **MATIC** - Small amount for gas fees (~$5-10 worth)
+- ✅ **pUSD (deposit via polymarket.com)** - For executing trades — deposit USDC on polymarket.com and it converts automatically
+- ✅ **POL** - Small amount for gas fees (~$5-10 worth)
 
-**Don't have USDC?** Bridge from Ethereum using [Polygon Bridge](https://wallet.polygon.technology/polygon/bridge/deposit) or buy directly on an exchange that supports Polygon withdrawals.
+**Don't have pUSD?** Log into [polymarket.com](https://polymarket.com), go to your profile, and deposit USDC. Polymarket converts it to pUSD automatically — no bridging or swapping required.
 
 ---
 
@@ -23,7 +23,7 @@ Before starting, ensure you have:
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd polymarket-copy-trading-bot-v1
+cd polymarket-copy-trading-bot
 
 # Install packages
 npm install
@@ -52,13 +52,24 @@ MONGO_URI = 'mongodb+srv://username:password@cluster.mongodb.net/database'
 # Polygon RPC (get free key at infura.io or alchemy.com)
 RPC_URL = 'https://polygon-mainnet.infura.io/v3/YOUR_PROJECT_ID'
 
-# Don't change these
 CLOB_HTTP_URL = 'https://clob.polymarket.com/'
 CLOB_WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws'
-USDC_CONTRACT_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'
+# pUSD collateral token address (Polymarket v2) — update if switching versions
+USDC_CONTRACT_ADDRESS = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'
 ```
 
-### Step 3: Build and Run
+### Step 3: Enable Preview Mode (Recommended for First Run)
+
+Before going live, add this to your `.env` to verify the bot is working without spending funds:
+
+```bash
+# Monitor trades and log what WOULD be copied — no real orders placed
+PREVIEW_MODE = true
+```
+
+Remove or set to `false` once you're confident everything is working correctly.
+
+### Step 4: Build and Run
 
 ```bash
 # Compile TypeScript
@@ -83,7 +94,7 @@ When the bot starts successfully, you should see:
    1. 0x7c3db723f1d4d8cb9c550095203b686cb11e5c6b
 
 💼 Your Wallet:
-   0x4fbBe5599c06e846D2742014c9eB04A8a3d1DE8C
+   <YOUR_PROXY_WALLET>
 
 ✓ MongoDB connected
 ℹ Initializing CLOB client...
@@ -141,19 +152,17 @@ When a trader you're following makes a trade, the bot:
 
 Checks every second for new positions
 
-### 2. Calculates Your Position Size
+### 2. Calculates Your Order Size
 
-```
-ratio = your_balance / (trader_balance + trade_size)
-your_trade_size = trader_trade_size × ratio
-```
+Uses the `COPY_STRATEGY` you configured in `.env`:
 
-**Example:**
+| Strategy | How it works | Example (`COPY_SIZE = 10`) |
+|---|---|---|
+| `FIXED` | Always copies a fixed USD amount | Always places a $10 order |
+| `PERCENTAGE` | Copies a % of the trader's order size | Trader buys $500 → you buy $50 |
+| `ADAPTIVE` | Scales % based on trade size | Smaller trades get higher %, larger trades get lower % |
 
-- Trader has $10,000, buys $1,000 worth (10% of capital)
-- You have $1,000
-- Ratio: `1,000 / (10,000 + 1,000) = 0.091` (9.1%)
-- You buy: `$1,000 × 0.091 = $91` (9.1% of your capital)
+Safety limits (`MAX_ORDER_SIZE_USD`, `MIN_ORDER_SIZE_USD`, `MAX_POSITION_SIZE_USD`) are applied after strategy math.
 
 ### 3. Checks Price Slippage
 
@@ -260,10 +269,16 @@ Balances:
 
 ### Trades Failing
 
+**"maker address not allowed, please use the deposit wallet flow"**
+
+- Your proxy wallet hasn't been registered with Polymarket's CLOB backend yet.
+- Fix: log into [polymarket.com](https://polymarket.com) with the wallet that controls your `PROXY_WALLET` and complete at least one deposit. This activates the wallet on the backend. It only needs to be done once per wallet.
+- The bot auto-detects your wallet type (EOA / Polymarket V2 POLY_1271 / Gnosis Safe) by reading on-chain storage. A working `RPC_URL` is required — if the RPC is unreachable the bot will refuse to start with a clear error.
+
 **"Insufficient balance"**
 
-- Ensure `PROXY_WALLET` has USDC
-- Verify you have MATIC for gas
+- Ensure `PROXY_WALLET` has pUSD (deposit USDC via polymarket.com)
+- Verify you have POL for gas
 
 **"Price slippage too high"**
 
@@ -286,8 +301,8 @@ Balances:
 
 **Trades executing too slowly**
 
-- Decrease `FETCH_INTERVAL` to 0.5 seconds (risky)
-- Use faster RPC endpoint (Alchemy vs Infura)
+- Decrease `FETCH_INTERVAL` to 1 second (minimum — must be a positive integer)
+- Use a faster RPC endpoint (Alchemy or QuickNode vs public endpoints)
 - Ensure stable internet connection
 
 ---
@@ -333,8 +348,8 @@ USER_ADDRESSES = '["trader1", "trader2", "trader3"]'
 # Check every 2 seconds (less CPU usage)
 FETCH_INTERVAL = 2
 
-# Check every 0.5 seconds (faster execution)
-FETCH_INTERVAL = 0.5
+# Minimum supported value is 1 (must be a positive integer)
+FETCH_INTERVAL = 1
 ```
 
 ### Custom Retry Logic

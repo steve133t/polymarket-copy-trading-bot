@@ -66,6 +66,7 @@ export function VolumeSparkline({ traders, timeRange = 'all' }: VolumeSparklineP
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data}>
             <Line
+                  isAnimationActive={false}
               type="monotone"
               dataKey="volume"
               stroke={trend === 'up' ? '#22c55e' : trend === 'down' ? '#ef4444' : '#71717a'}

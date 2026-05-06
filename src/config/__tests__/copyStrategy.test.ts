@@ -67,6 +67,53 @@ describe('calculateOrderSize', () => {
         });
     });
 
+    describe('BALANCE_PERCENT strategy', () => {
+        const balancePctConfig: CopyStrategyConfig = {
+            strategy: CopyStrategy.BALANCE_PERCENT,
+            copySize: 5.0, // 5% of my balance
+            maxOrderSizeUSD: 100.0,
+            minOrderSizeUSD: 1.0,
+        };
+
+        it('bets 5% of a $200 balance → $10 regardless of trader order size', () => {
+            const result = calculateOrderSize(balancePctConfig, 500, 200, 0);
+            expect(result.finalAmount).toBeCloseTo(10, 5);
+            expect(result.strategy).toBe(CopyStrategy.BALANCE_PERCENT);
+            expect(result.belowMinimum).toBe(false);
+        });
+
+        it('bets 5% of a $50 balance → $2.50', () => {
+            const result = calculateOrderSize(balancePctConfig, 1000, 50, 0);
+            expect(result.finalAmount).toBeCloseTo(2.5, 5); // 5% of $50 = $2.50
+        });
+
+        it('is independent of trader order size — same result for $10 and $10000 trades', () => {
+            const small = calculateOrderSize(balancePctConfig, 10, 200, 0);
+            const large = calculateOrderSize(balancePctConfig, 10000, 200, 0);
+            expect(small.finalAmount).toBe(large.finalAmount);
+        });
+
+        it('caps at maxOrderSizeUSD when balance % exceeds max', () => {
+            const bigBalanceConfig: CopyStrategyConfig = { ...balancePctConfig, copySize: 60 };
+            const result = calculateOrderSize(bigBalanceConfig, 100, 200, 0); // 60% of $200 = $120 > max $100
+            expect(result.finalAmount).toBe(100);
+            expect(result.cappedByMax).toBe(true);
+        });
+
+        it('returns 0 and belowMinimum when balance % < minOrderSizeUSD', () => {
+            const tinyBalanceConfig: CopyStrategyConfig = { ...balancePctConfig, copySize: 1, minOrderSizeUSD: 5 };
+            const result = calculateOrderSize(tinyBalanceConfig, 100, 10, 0); // 1% of $10 = $0.10 < $5 min
+            expect(result.belowMinimum).toBe(true);
+            expect(result.finalAmount).toBe(0);
+        });
+
+        it('naturally reduces bet when balance drops (scales with account)', () => {
+            const richResult = calculateOrderSize(balancePctConfig, 100, 1000, 0); // 5% of $1000 = $50
+            const poorResult = calculateOrderSize(balancePctConfig, 100, 20, 0);   // 5% of $20 = $1
+            expect(richResult.finalAmount).toBeGreaterThan(poorResult.finalAmount);
+        });
+    });
+
     describe('Position limits', () => {
         it('should respect maxPositionSizeUSD', () => {
             const configWithLimit: CopyStrategyConfig = {

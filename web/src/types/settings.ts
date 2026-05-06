@@ -1,4 +1,4 @@
-export type CopyStrategy = 'PERCENTAGE' | 'FIXED' | 'ADAPTIVE';
+export type CopyStrategy = 'PERCENTAGE' | 'FIXED' | 'ADAPTIVE' | 'BALANCE_PERCENT';
 
 export interface MultiplierTier {
   min: number;

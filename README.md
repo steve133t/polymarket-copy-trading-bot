@@ -25,7 +25,7 @@
 | 📈 **3 Copy Strategies** | FIXED, PERCENTAGE, or ADAPTIVE position sizing |
 | 🎚️ **Tiered Multipliers** | Different multipliers per trade size range |
 | 🔄 **Trade Aggregation** | Combine small trades into one executable order |
-| 🔁 **Auto-Resolve** | Automatically close winning/losing resolved positions |
+| 🔁 **Auto-Redeem** | Native Polymarket feature — enable in app settings (see below) |
 | 💾 **MongoDB Storage** | Persistent trade and position history |
 | 🐳 **Docker Support** | Production-ready containerized deployment |
 
@@ -83,7 +83,7 @@ npm start
 | **Node.js v18+** | [Download](https://nodejs.org/) |
 | **MongoDB Atlas** | [Free tier](https://www.mongodb.com/cloud/atlas/register) — whitelist `0.0.0.0/0` in Network Access |
 | **Polygon wallet** | MetaMask or any Web3 wallet |
-| **USDC on Polygon** | The trading capital for the bot |
+| **pUSD on Polymarket** | Deposit USDC via polymarket.com — it converts automatically |
 | **POL (MATIC)** | ~$2–5 worth for gas fees |
 | **Polygon RPC URL** | Free from [Alchemy](https://alchemy.com) or [Infura](https://infura.io) |
 
@@ -177,6 +177,7 @@ USER_ADDRESSES=0xTraderWalletAddress
 | `TRADE_AGGREGATION_WINDOW_SECONDS` | Aggregation wait window | `300` |
 | `AUTO_RESOLVE_ENABLED` | Auto-close resolved positions | `false` |
 | `AUTO_RESOLVE_INTERVAL` | Seconds between resolve checks | `60` |
+| `USDC_CONTRACT_ADDRESS` | pUSD contract address (pre-set to `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` for v2) | `0xC011...` |
 | `TIERED_MULTIPLIERS` | Size-based multiplier ranges | — |
 | `MAX_POSITION_SIZE_USD` | Max position per market | — |
 | `MAX_DAILY_VOLUME_USD` | Daily spend cap | — |
@@ -299,7 +300,7 @@ Win Rate     = Profitable markets ÷ (Profitable + Losing markets)
 Once you're satisfied with paper results:
 
 1. Set `PREVIEW_MODE = false` in `.env`
-2. Ensure your `PROXY_WALLET` has USDC and POL for gas
+2. Ensure your `PROXY_WALLET` has pUSD (deposit via polymarket.com) and POL for gas
 3. Restart the bot
 
 ---
@@ -413,6 +414,19 @@ npm run build            # Compile TypeScript to dist/
 
 ---
 
+## Auto-Redeem (Polymarket Native Feature)
+
+Polymarket has a built-in auto-redeem feature that automatically redeems your winning positions once a market resolves — no gas or manual action needed.
+
+**How to enable it:**
+1. Go to [polymarket.com](https://polymarket.com) and connect your wallet
+2. Open **Settings** (top-right menu)
+3. Toggle **Auto-Redeem** to on
+
+> Once enabled, Polymarket will automatically convert your winning YES/NO tokens to USDC after each market resolves. There is no bot-side implementation needed.
+
+---
+
 ## Troubleshooting
 
 ### Bot won't start
@@ -429,6 +443,7 @@ npm run build            # Compile TypeScript to dist/
 **"CLOB client failed"**
 - Verify `PROXY_WALLET` and `PRIVATE_KEY` are correct
 - Ensure the wallet has signed into Polymarket at least once
+- `maker address not allowed, please use the deposit wallet flow` — your proxy wallet is not yet registered with Polymarket v2. Log into polymarket.com and complete a deposit (any amount). This registers the wallet as an authorized maker. Required once per wallet.
 
 ### Dashboard issues
 
@@ -513,6 +528,14 @@ See [Docker Guide](./docs/DOCKER.md) for full instructions.
 ## What's New (This Fork)
 
 This fork adds significant improvements over the original:
+
+### Polymarket V2 Migration
+
+- **New client package**: upgraded from `@polymarket/clob-client` (v1) to `@polymarket/clob-client-v2`
+- **New exchange contract**: `0xE111180000d2663C0091e4f400237545B87B996B` (was `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E`)
+- **pUSD collateral**: Polymarket v2 uses pUSD (`0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB`) instead of USDC.e. Deposit USDC via polymarket.com and it converts automatically.
+- **viem wallet integration**: signing now uses viem for compatibility with the v2 client
+- **One-time deposit registration**: before placing any orders, the proxy wallet must be registered by completing a deposit on polymarket.com. Orders will fail with `maker address not allowed` until this is done.
 
 ### Bug Fixes
 

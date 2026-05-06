@@ -14,14 +14,16 @@ interface CopyStrategySectionProps {
 }
 
 const strategyOptions = [
-  { value: 'PERCENTAGE', label: 'Percentage' },
+  { value: 'PERCENTAGE', label: 'Percentage of Trader' },
   { value: 'FIXED', label: 'Fixed Amount' },
+  { value: 'BALANCE_PERCENT', label: '% of My Balance' },
   { value: 'ADAPTIVE', label: 'Adaptive' },
 ];
 
 const strategyDescriptions: Record<CopyStrategy, string> = {
-  PERCENTAGE: 'Copy a fixed percentage of trader\'s order size',
-  FIXED: 'Copy a fixed dollar amount per trade',
+  PERCENTAGE: "Copy a fixed % of the trader's order size (e.g. 10% of their $500 = $50)",
+  FIXED: 'Copy a fixed dollar amount per trade, regardless of what the trader bets',
+  BALANCE_PERCENT: 'Bet a fixed % of your own account balance per trade (e.g. 5% of your $200 = $10)',
   ADAPTIVE: 'Dynamically adjust percentage based on trade size',
 };
 
@@ -32,6 +34,7 @@ export function CopyStrategySection({
   onAdaptiveStrategyChange,
 }: CopyStrategySectionProps) {
   const isAdaptive = copyStrategy.strategy === 'ADAPTIVE';
+  const isBalancePercent = copyStrategy.strategy === 'BALANCE_PERCENT';
 
   return (
     <Card>
@@ -60,19 +63,25 @@ export function CopyStrategySection({
         {/* Copy Size */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input
-            label={copyStrategy.strategy === 'FIXED' ? 'Fixed Amount ($)' : 'Copy Percentage (%)'}
+            label={
+              copyStrategy.strategy === 'FIXED'
+                ? 'Fixed Amount ($)'
+                : 'Copy Size (%)'
+            }
             type="number"
             step="0.1"
             value={copyStrategy.copySize}
             onChange={(e) => onCopyStrategyChange({ copySize: parseFloat(e.target.value) || 0 })}
           />
-          <Input
-            label="Trade Multiplier"
-            type="number"
-            step="0.1"
-            value={copyStrategy.tradeMultiplier}
-            onChange={(e) => onCopyStrategyChange({ tradeMultiplier: parseFloat(e.target.value) || 1 })}
-          />
+          {!isBalancePercent && (
+            <Input
+              label="Trade Multiplier"
+              type="number"
+              step="0.1"
+              value={copyStrategy.tradeMultiplier}
+              onChange={(e) => onCopyStrategyChange({ tradeMultiplier: parseFloat(e.target.value) || 1 })}
+            />
+          )}
         </div>
 
         {/* Adaptive Strategy Options */}
@@ -108,14 +117,16 @@ export function CopyStrategySection({
           </div>
         )}
 
-        {/* Tiered Multipliers */}
-        <div className="p-4 border rounded-lg space-y-4">
-          <h4 className="font-medium text-sm">Tiered Multipliers (Optional)</h4>
-          <TieredMultipliersEditor
-            value={copyStrategy.tieredMultipliers}
-            onChange={(value) => onCopyStrategyChange({ tieredMultipliers: value })}
-          />
-        </div>
+        {/* Tiered Multipliers — not applicable for BALANCE_PERCENT */}
+        {!isBalancePercent && (
+          <div className="p-4 border rounded-lg space-y-4">
+            <h4 className="font-medium text-sm">Tiered Multipliers (Optional)</h4>
+            <TieredMultipliersEditor
+              value={copyStrategy.tieredMultipliers}
+              onChange={(value) => onCopyStrategyChange({ tieredMultipliers: value })}
+            />
+          </div>
+        )}
 
         {/* Preview */}
         <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-lg">
@@ -130,6 +141,11 @@ export function CopyStrategySection({
             <p>
               Trader buys any amount → You buy ${(copyStrategy.copySize * copyStrategy.tradeMultiplier).toFixed(2)}
               (${copyStrategy.copySize} × {copyStrategy.tradeMultiplier}x)
+            </p>
+          )}
+          {copyStrategy.strategy === 'BALANCE_PERCENT' && (
+            <p>
+              Your balance $200 → {copyStrategy.copySize}% = ${(200 * copyStrategy.copySize / 100).toFixed(2)} per trade
             </p>
           )}
           {copyStrategy.strategy === 'ADAPTIVE' && (

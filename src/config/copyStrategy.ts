@@ -12,6 +12,7 @@ export enum CopyStrategy {
     PERCENTAGE = 'PERCENTAGE',
     FIXED = 'FIXED',
     ADAPTIVE = 'ADAPTIVE',
+    BALANCE_PERCENT = 'BALANCE_PERCENT',
 }
 
 /**
@@ -96,12 +97,21 @@ export function calculateOrderSize(
             reasoning = `Adaptive ${adaptivePercent.toFixed(1)}% of trader's $${traderOrderSize.toFixed(2)} = $${baseAmount.toFixed(2)}`;
             break;
 
+        case CopyStrategy.BALANCE_PERCENT:
+            baseAmount = availableBalance * (config.copySize / 100);
+            reasoning = `${config.copySize}% of your balance $${availableBalance.toFixed(2)} = $${baseAmount.toFixed(2)}`;
+            break;
+
         default:
             throw new Error(`Unknown strategy: ${config.strategy}`);
     }
 
-    // Step 1.5: Apply tiered or single multiplier based on trader's order size
-    const multiplier = getTradeMultiplier(config, traderOrderSize);
+    // Step 1.5: Apply tiered or single multiplier based on trader's order size.
+    // BALANCE_PERCENT skips this — the percentage IS the sizing; a multiplier on
+    // top would be redundant and confusing (just change COPY_SIZE instead).
+    const multiplier = config.strategy === CopyStrategy.BALANCE_PERCENT
+        ? 1.0
+        : getTradeMultiplier(config, traderOrderSize);
     let finalAmount = baseAmount * multiplier;
 
     if (multiplier !== 1.0) {
@@ -206,6 +216,10 @@ export function validateCopyStrategyConfig(config: CopyStrategyConfig): string[]
 
     if (config.strategy === CopyStrategy.PERCENTAGE && config.copySize > 100) {
         errors.push('copySize for PERCENTAGE strategy should be <= 100');
+    }
+
+    if (config.strategy === CopyStrategy.BALANCE_PERCENT && config.copySize > 100) {
+        errors.push('copySize for BALANCE_PERCENT strategy should be <= 100');
     }
 
     // Validate limits

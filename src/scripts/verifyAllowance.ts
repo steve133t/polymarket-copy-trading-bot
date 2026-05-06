@@ -5,27 +5,27 @@ const PROXY_WALLET = ENV.PROXY_WALLET;
 const RPC_URL = ENV.RPC_URL;
 const USDC_CONTRACT_ADDRESS = ENV.USDC_CONTRACT_ADDRESS;
 
-// Polymarket's CTF Exchange contract address on Polygon
-const POLYMARKET_EXCHANGE = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
+// Polymarket CTF Exchange V2 contract address on Polygon (pUSD collateral)
+const POLYMARKET_EXCHANGE = '0xE111180000d2663C0091e4f400237545B87B996B';
 
-// USDC ABI (only the functions we need)
-const USDC_ABI = [
+// pUSD token ABI (only the functions we need)
+const PUSD_ABI = [
     'function balanceOf(address owner) view returns (uint256)',
     'function allowance(address owner, address spender) view returns (uint256)',
     'function decimals() view returns (uint8)',
 ];
 
 async function verifyAllowance() {
-    console.log('🔍 Verifying USDC allowance status...\n');
+    console.log('🔍 Verifying pUSD allowance status...\n');
 
     // Connect to Polygon
     const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
 
-    // Create USDC contract instance (read-only, no wallet needed)
-    const usdcContract = new ethers.Contract(USDC_CONTRACT_ADDRESS, USDC_ABI, provider);
+    // Create pUSD contract instance (read-only, no wallet needed)
+    const usdcContract = new ethers.Contract(USDC_CONTRACT_ADDRESS, PUSD_ABI, provider);
 
     try {
-        // Get USDC decimals
+        // Get pUSD decimals
         const decimals = await usdcContract.decimals();
 
         // Check balance
@@ -40,9 +40,9 @@ async function verifyAllowance() {
         console.log('📊 WALLET STATUS');
         console.log('═'.repeat(70));
         console.log(`💼 Wallet:     ${PROXY_WALLET}`);
-        console.log(`💵 USDC:       ${balanceFormatted} USDC`);
+        console.log(`💵 pUSD:       ${balanceFormatted} pUSD`);
         console.log(
-            `✅ Allowance:  ${currentAllowance.isZero() ? '0 USDC (NOT SET!)' : allowanceFormatted + ' USDC (SET!)'}`
+            `✅ Allowance:  ${currentAllowance.isZero() ? '0 pUSD (NOT SET!)' : allowanceFormatted + ' pUSD (SET!)'}`
         );
         console.log(`📍 Exchange:   ${POLYMARKET_EXCHANGE}`);
         console.log('═'.repeat(70));
@@ -57,8 +57,8 @@ async function verifyAllowance() {
         } else if (currentAllowance.lt(balance)) {
             console.log('\n⚠️  WARNING: Allowance is less than your balance!');
             console.log(`   You may not be able to trade your full balance.`);
-            console.log(`\n   Balance:   ${balanceFormatted} USDC`);
-            console.log(`   Allowance: ${allowanceFormatted} USDC`);
+            console.log(`\n   Balance:   ${balanceFormatted} pUSD`);
+            console.log(`   Allowance: ${allowanceFormatted} pUSD`);
             console.log(`\n   Consider setting unlimited allowance:`);
             console.log('   npm run check-allowance');
             process.exit(1);

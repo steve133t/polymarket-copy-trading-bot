@@ -1,7 +1,7 @@
-import { ClobClient } from '@polymarket/clob-client';
+import { ClobClient } from '@polymarket/clob-client-v2';
 import { UserActivityInterface, UserPositionInterface } from '../interfaces/User';
 import { ENV, getCurrentUserAddresses } from '../config/env';
-import { getUserActivityModel } from '../models/userHistory';
+import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import fetchData from '../utils/fetchData';
 import getMyBalance from '../utils/getMyBalance';
 import postOrder from '../utils/postOrder';
@@ -12,6 +12,48 @@ const PROXY_WALLET = ENV.PROXY_WALLET;
 const TRADE_AGGREGATION_ENABLED = ENV.TRADE_AGGREGATION_ENABLED;
 const TRADE_AGGREGATION_WINDOW_SECONDS = ENV.TRADE_AGGREGATION_WINDOW_SECONDS;
 const TRADE_AGGREGATION_MIN_TOTAL_USD = 1.0; // Polymarket minimum
+
+// ---------------------------------------------------------------------------
+// In-memory cache for my own positions + balance.
+// Fetched in parallel and refreshed at most every 5 s.
+// Avoids 2 sequential Polymarket API calls (~2–3 s each) before every trade.
+// ---------------------------------------------------------------------------
+let myPositionsCache: UserPositionInterface[] = [];
+let myBalanceCache = 0;
+let myCacheTimestamp = 0;
+const MY_CACHE_TTL_MS = 5_000;
+
+async function getMyData(): Promise<{ positions: UserPositionInterface[]; balance: number }> {
+    const now = Date.now();
+    if (myCacheTimestamp > 0 && now - myCacheTimestamp < MY_CACHE_TTL_MS) {
+        return { positions: myPositionsCache, balance: myBalanceCache };
+    }
+    const [positions, balance] = await Promise.all([
+        fetchData(`https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`) as Promise<UserPositionInterface[]>,
+        getMyBalance(PROXY_WALLET),
+    ]);
+    myPositionsCache = Array.isArray(positions) ? positions : [];
+    myBalanceCache = balance;
+    myCacheTimestamp = now;
+    return { positions: myPositionsCache, balance: myBalanceCache };
+}
+
+/** Invalidate cache after a trade changes my portfolio. */
+function invalidateMyCache(): void {
+    myCacheTimestamp = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Fetch trader positions from MongoDB (kept current by tradeMonitor).
+// Much faster than a Polymarket API call (~1–3 s) because the data is local.
+// ---------------------------------------------------------------------------
+async function getTraderData(userAddress: string): Promise<{ positions: UserPositionInterface[]; balance: number }> {
+    const UserPosition = getUserPositionModel(userAddress);
+    const docs = await UserPosition.find().exec();
+    const positions = docs.map((d) => d.toObject() as UserPositionInterface);
+    const balance = positions.reduce((sum, p) => sum + (p.currentValue || 0), 0);
+    return { positions, balance };
+}
 
 // Create activity models for each user. This refreshes from .env so trader
 // changes made in the UI are picked up without restarting the process.
@@ -186,28 +228,20 @@ const doTrading = async (clobClient: ClobClient, trades: TradeWithUser[]) => {
         });
 
         try {
-            const my_positions: UserPositionInterface[] = await fetchData(
-                `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`
+            // Parallel fetch: my data from cache/API, trader data from MongoDB (no extra API call)
+            const [myData, traderData] = await Promise.all([
+                getMyData(),
+                getTraderData(trade.userAddress),
+            ]);
+
+            const my_position = myData.positions.find(
+                (p) => p.conditionId === trade.conditionId
             );
-            const user_positions: UserPositionInterface[] = await fetchData(
-                `https://data-api.polymarket.com/positions?user=${trade.userAddress}`
-            );
-            const my_position = my_positions.find(
-                (position: UserPositionInterface) => position.conditionId === trade.conditionId
-            );
-            const user_position = user_positions.find(
-                (position: UserPositionInterface) => position.conditionId === trade.conditionId
+            const user_position = traderData.positions.find(
+                (p) => p.conditionId === trade.conditionId
             );
 
-            // Get USDC balance
-            const my_balance = await getMyBalance(PROXY_WALLET);
-
-            // Calculate trader's total portfolio value from positions
-            const user_balance = user_positions.reduce((total, pos) => {
-                return total + (pos.currentValue || 0);
-            }, 0);
-
-            Logger.balance(my_balance, user_balance, trade.userAddress);
+            Logger.balance(myData.balance, traderData.balance, trade.userAddress);
 
             // Execute the trade
             await postOrder(
@@ -216,10 +250,13 @@ const doTrading = async (clobClient: ClobClient, trades: TradeWithUser[]) => {
                 my_position,
                 user_position,
                 trade,
-                my_balance,
-                user_balance,
+                myData.balance,
+                traderData.balance,
                 trade.userAddress
             );
+
+            // Invalidate cache so the next trade sees updated positions
+            invalidateMyCache();
         } catch (err) {
             // Reset in-progress marker so the trade is retried on the next poll cycle
             await UserActivity.updateOne({ _id: trade._id }, { $set: { botExcutedTime: 0 } });
@@ -248,28 +285,20 @@ const doAggregatedTrading = async (clobClient: ClobClient, aggregatedTrades: Agg
         }
 
         try {
-            const my_positions: UserPositionInterface[] = await fetchData(
-                `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`
+            // Parallel fetch: my data from cache/API, trader data from MongoDB
+            const [myData, traderData] = await Promise.all([
+                getMyData(),
+                getTraderData(agg.userAddress),
+            ]);
+
+            const my_position = myData.positions.find(
+                (p) => p.conditionId === agg.conditionId
             );
-            const user_positions: UserPositionInterface[] = await fetchData(
-                `https://data-api.polymarket.com/positions?user=${agg.userAddress}`
-            );
-            const my_position = my_positions.find(
-                (position: UserPositionInterface) => position.conditionId === agg.conditionId
-            );
-            const user_position = user_positions.find(
-                (position: UserPositionInterface) => position.conditionId === agg.conditionId
+            const user_position = traderData.positions.find(
+                (p) => p.conditionId === agg.conditionId
             );
 
-            // Get USDC balance
-            const my_balance = await getMyBalance(PROXY_WALLET);
-
-            // Calculate trader's total portfolio value from positions
-            const user_balance = user_positions.reduce((total, pos) => {
-                return total + (pos.currentValue || 0);
-            }, 0);
-
-            Logger.balance(my_balance, user_balance, agg.userAddress);
+            Logger.balance(myData.balance, traderData.balance, agg.userAddress);
 
             // Create a synthetic trade object for postOrder using aggregated values
             const syntheticTrade: UserActivityInterface = {
@@ -286,10 +315,12 @@ const doAggregatedTrading = async (clobClient: ClobClient, aggregatedTrades: Agg
                 my_position,
                 user_position,
                 syntheticTrade,
-                my_balance,
-                user_balance,
+                myData.balance,
+                traderData.balance,
                 agg.userAddress
             );
+
+            invalidateMyCache();
         } catch (err) {
             // Reset in-progress marker on all constituent trades so they can be retried
             for (const trade of agg.trades) {

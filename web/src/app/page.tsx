@@ -20,6 +20,8 @@ import { PreviewStatsView } from '@/components/PreviewStatsView';
 import { StatusBar } from '@/components/StatusBar';
 import { Button } from '@/components/ui/button';
 import { TimeRangeFilter, TimeRange } from '@/components/TimeRangeFilter';
+import BotOfflineAlert from '@/components/BotOfflineAlert';
+import { useBotStatus } from '@/hooks/useBotStatus';
 
 type ViewMode = 'traders' | 'my-trades' | 'paper' | 'settings';
 
@@ -30,6 +32,10 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [countdown, setCountdown] = useState(30);
+  const botStatus = useBotStatus();
+
+  const REFRESH_INTERVAL = 30;
 
   const fetchTraders = async (refresh = false) => {
     try {
@@ -56,6 +62,22 @@ export default function Home() {
 
   useEffect(() => {
     fetchTraders();
+  }, []);
+
+  // Auto-refresh every 30 seconds with countdown
+  useEffect(() => {
+    let count = REFRESH_INTERVAL;
+    const tick = setInterval(() => {
+      count -= 1;
+      setCountdown(count);
+      if (count <= 0) {
+        fetchTraders();
+        count = REFRESH_INTERVAL;
+        setCountdown(REFRESH_INTERVAL);
+      }
+    }, 1000);
+    return () => clearInterval(tick);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Show loading only for traders view initial load
@@ -110,52 +132,55 @@ export default function Home() {
     }
   };
 
+  const navItems: { id: ViewMode; label: string }[] = [
+    { id: 'traders', label: 'Traders' },
+    { id: 'my-trades', label: 'My Trades' },
+    { id: 'paper', label: 'Paper' },
+    { id: 'settings', label: 'Settings' },
+  ];
+
   return (
     <div className="min-h-screen bg-background dark">
-      <div className="container mx-auto px-4 py-6">
-        {/* Header with Mode Toggle */}
-        <header className="mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-            <div>
-              <h1 className="text-3xl font-bold mb-1 tracking-tight">
-                {viewMode === 'settings' ? 'Bot Dashboard' : 'Trader Analytics'}
-              </h1>
-              <p className="text-sm text-muted-foreground">{getSubtitle()}</p>
-            </div>
-
-            {/* Mode Toggle Buttons */}
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={viewMode === 'traders' ? 'default' : 'outline'}
-                onClick={() => setViewMode('traders')}
+      <BotOfflineAlert />
+      {/* Sticky top nav — Polymarket-style */}
+      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-border">
+        <div className="container mx-auto px-4 md:px-8 flex items-center justify-between h-14">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sm tracking-tight text-foreground">
+              Polymarket Bot
+            </span>
+            {botStatus !== null && (
+              <span
+                className={`flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full border ${
+                  botStatus
+                    ? 'text-green-400 border-green-500/30 bg-green-500/10'
+                    : 'text-red-400 border-red-500/30 bg-red-500/10'
+                }`}
               >
-                Traders
-              </Button>
-              <Button
-                size="sm"
-                variant={viewMode === 'my-trades' ? 'default' : 'outline'}
-                onClick={() => setViewMode('my-trades')}
-              >
-                My Trades
-              </Button>
-              <Button
-                size="sm"
-                variant={viewMode === 'paper' ? 'default' : 'outline'}
-                onClick={() => setViewMode('paper')}
-              >
-                📄 Paper
-              </Button>
-              <Button
-                size="sm"
-                variant={viewMode === 'settings' ? 'default' : 'outline'}
-                onClick={() => setViewMode('settings')}
-              >
-                Settings
-              </Button>
-            </div>
+                <span className={`w-1.5 h-1.5 rounded-full ${botStatus ? 'bg-green-400' : 'bg-red-400'}`} />
+                {botStatus ? 'Bot live' : 'Bot offline'}
+              </span>
+            )}
           </div>
-        </header>
+          <nav className="flex items-center">
+            {navItems.map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => setViewMode(id)}
+                className={`relative h-14 px-4 text-sm font-medium transition-colors ${
+                  viewMode === id
+                    ? 'text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary after:rounded-t'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </header>
+
+      <div className="container mx-auto px-4 md:px-8 py-8">
 
         {viewMode === 'traders' && (
           <>
@@ -166,7 +191,8 @@ export default function Home() {
               totalItems={traders.length}
               itemLabel="traders"
               refreshing={refreshing}
-              onRefresh={() => fetchTraders(true)}
+              onRefresh={() => { fetchTraders(true); setCountdown(REFRESH_INTERVAL); }}
+              countdown={countdown}
             />
               {error ? (
                 <p className="text-sm text-red-400">{error}</p>

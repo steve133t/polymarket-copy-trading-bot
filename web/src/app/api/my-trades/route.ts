@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
+import { readEnvKey } from '@/lib/envUtils';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -32,6 +33,10 @@ export async function GET(request: Request) {
 }
 
 async function fetchLiveData(reportsDir: string) {
+  // Apply the same age cutoff the bot uses so old test trades age out automatically
+  const tooOldHours = parseInt(readEnvKey('TOO_OLD_TIMESTAMP') || '24', 10);
+  const cutoffTs = Math.floor(Date.now() / 1000) - tooOldHours * 3600;
+
   const summaryPath = path.join(reportsDir, '_SUMMARY.json');
 
   if (!fs.existsSync(summaryPath)) {
@@ -78,17 +83,20 @@ async function fetchLiveData(reportsDir: string) {
   const totalRealizedPnL = myPositions.reduce((sum, p) => sum + (p.realizedPnl || 0), 0);
   const totalPositionsPnL = totalUnrealizedPnL + totalRealizedPnL;
 
-  // Fetch ALL traders' trades
+  // Fetch ALL traders' trades (filtered to same window)
   const traderTradesMap = new Map<string, Trade[]>();
   for (const trader of traders) {
     const trades = await fetchTrades(trader.address);
-    traderTradesMap.set(trader.address.toLowerCase(), trades);
+    traderTradesMap.set(trader.address.toLowerCase(), trades.filter(t => t.timestamp >= cutoffTs));
   }
+
+  // Filter to the same age window the bot uses — drops old test trades
+  const recentMyTrades = myTrades.filter(t => t.timestamp >= cutoffTs);
 
   // Match trades
   const MATCH_WINDOW_SECONDS = 300;
 
-  const allMyTrades = myTrades.map(myTrade => {
+  const allMyTrades = recentMyTrades.map(myTrade => {
     let matchedTrader: string | null = null;
     let matchedTraderLabel: string | null = null;
     let timeDiff: number | null = null;
@@ -96,6 +104,7 @@ async function fetchLiveData(reportsDir: string) {
     for (const trader of traders) {
       const traderTrades = traderTradesMap.get(trader.address.toLowerCase()) || [];
       const match = traderTrades.find(tt =>
+        tt.asset === myTrade.asset &&
         tt.conditionId === myTrade.conditionId &&
         tt.side === myTrade.side &&
         tt.timestamp < myTrade.timestamp &&
@@ -138,10 +147,14 @@ async function fetchLiveData(reportsDir: string) {
     const trades = byTraderMap.get(trader.address.toLowerCase()) || [];
     let totalBought = 0;
     let totalSold = 0;
+    let buyCount = 0;
+    let lagSum = 0;
+    let lagCount = 0;
 
     for (const trade of trades) {
-      if (trade.side === 'BUY') totalBought += trade.usdcSize;
+      if (trade.side === 'BUY') { totalBought += trade.usdcSize; buyCount++; }
       else totalSold += trade.usdcSize;
+      if (trade.timeDiff !== null) { lagSum += trade.timeDiff; lagCount++; }
     }
 
     return {
@@ -150,9 +163,11 @@ async function fetchLiveData(reportsDir: string) {
       trades,
       totalBought,
       totalSold,
+      buyCount,
       tradeCount: trades.length,
-      pnl: totalSold - totalBought,
-      roi: totalBought > 0 ? ((totalSold - totalBought) / totalBought) * 100 : 0,
+      netFlow: totalSold - totalBought,
+      avgBuySize: buyCount > 0 ? totalBought / buyCount : 0,
+      avgCopyLagSeconds: lagCount > 0 ? Math.round(lagSum / lagCount) : null,
     };
   });
 
@@ -161,8 +176,9 @@ async function fetchLiveData(reportsDir: string) {
   if (unmatchedTrades.length > 0) {
     let totalBought = 0;
     let totalSold = 0;
+    let buyCount = 0;
     for (const trade of unmatchedTrades) {
-      if (trade.side === 'BUY') totalBought += trade.usdcSize;
+      if (trade.side === 'BUY') { totalBought += trade.usdcSize; buyCount++; }
       else totalSold += trade.usdcSize;
     }
     byTrader.push({
@@ -171,9 +187,11 @@ async function fetchLiveData(reportsDir: string) {
       trades: unmatchedTrades,
       totalBought,
       totalSold,
+      buyCount,
       tradeCount: unmatchedTrades.length,
-      pnl: totalSold - totalBought,
-      roi: totalBought > 0 ? ((totalSold - totalBought) / totalBought) * 100 : 0,
+      netFlow: totalSold - totalBought,
+      avgBuySize: buyCount > 0 ? totalBought / buyCount : 0,
+      avgCopyLagSeconds: null,
     });
   }
 
