@@ -69,14 +69,20 @@ const activitySchema = new Schema({
     botCopyPrice: { type: Number, required: false },
 });
 
-const getUserPositionModel = (walletAddress: string) => {
+// Using Model<any> lets callers access arbitrary schema fields without
+// TypeScript complaining, while still providing all Model query methods.
+// The re-use guard prevents "Cannot overwrite model once compiled" errors
+// when the same address is registered more than once (e.g. during tests).
+const getUserPositionModel = (walletAddress: string): mongoose.Model<any> => {
     const collectionName = `user_positions_${walletAddress}`;
-    return mongoose.model(collectionName, positionSchema, collectionName);
+    return (mongoose.models[collectionName] as mongoose.Model<any>) ||
+        mongoose.model<any>(collectionName, positionSchema, collectionName);
 };
 
-const getUserActivityModel = (walletAddress: string) => {
+const getUserActivityModel = (walletAddress: string): mongoose.Model<any> => {
     const collectionName = `user_activities_${walletAddress}`;
-    return mongoose.model(collectionName, activitySchema, collectionName);
+    return (mongoose.models[collectionName] as mongoose.Model<any>) ||
+        mongoose.model<any>(collectionName, activitySchema, collectionName);
 };
 
 export { getUserActivityModel, getUserPositionModel };

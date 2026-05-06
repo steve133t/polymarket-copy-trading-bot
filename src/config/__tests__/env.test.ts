@@ -62,6 +62,51 @@ describe('Environment variable parsing', () => {
         }).toThrow('Invalid Ethereum address');
     });
 
+    it('should parse COPY_STRATEGY without quotes', () => {
+        process.env.USER_ADDRESSES = '0x1234567890123456789012345678901234567890';
+        process.env.PROXY_WALLET = '0x1111111111111111111111111111111111111111';
+        process.env.PRIVATE_KEY = 'testkey';
+        process.env.CLOB_HTTP_URL = 'https://clob.polymarket.com/';
+        process.env.CLOB_WS_URL = 'wss://ws.polymarket.com/ws';
+        process.env.MONGO_URI = 'mongodb://localhost:27017/test';
+        process.env.RPC_URL = 'https://polygon-rpc.com';
+        process.env.USDC_CONTRACT_ADDRESS = '0x2222222222222222222222222222222222222222';
+        process.env.COPY_STRATEGY = 'FIXED';
+
+        const { ENV } = require('../env');
+        expect(ENV.COPY_STRATEGY_CONFIG.strategy).toBe('FIXED');
+    });
+
+    it('should parse COPY_STRATEGY with surrounding single quotes', () => {
+        process.env.USER_ADDRESSES = '0x1234567890123456789012345678901234567890';
+        process.env.PROXY_WALLET = '0x1111111111111111111111111111111111111111';
+        process.env.PRIVATE_KEY = 'testkey';
+        process.env.CLOB_HTTP_URL = 'https://clob.polymarket.com/';
+        process.env.CLOB_WS_URL = 'wss://ws.polymarket.com/ws';
+        process.env.MONGO_URI = 'mongodb://localhost:27017/test';
+        process.env.RPC_URL = 'https://polygon-rpc.com';
+        process.env.USDC_CONTRACT_ADDRESS = '0x2222222222222222222222222222222222222222';
+        process.env.COPY_STRATEGY = "'FIXED'";
+
+        const { ENV } = require('../env');
+        expect(ENV.COPY_STRATEGY_CONFIG.strategy).toBe('FIXED');
+    });
+
+    it('should default COPY_STRATEGY to PERCENTAGE when unrecognised', () => {
+        process.env.USER_ADDRESSES = '0x1234567890123456789012345678901234567890';
+        process.env.PROXY_WALLET = '0x1111111111111111111111111111111111111111';
+        process.env.PRIVATE_KEY = 'testkey';
+        process.env.CLOB_HTTP_URL = 'https://clob.polymarket.com/';
+        process.env.CLOB_WS_URL = 'wss://ws.polymarket.com/ws';
+        process.env.MONGO_URI = 'mongodb://localhost:27017/test';
+        process.env.RPC_URL = 'https://polygon-rpc.com';
+        process.env.USDC_CONTRACT_ADDRESS = '0x2222222222222222222222222222222222222222';
+        process.env.COPY_STRATEGY = 'UNKNOWN_STRATEGY';
+
+        const { ENV } = require('../env');
+        expect(ENV.COPY_STRATEGY_CONFIG.strategy).toBe('PERCENTAGE');
+    });
+
     it('should reject invalid FETCH_INTERVAL', () => {
         process.env.USER_ADDRESSES = '0x1234567890123456789012345678901234567890';
         process.env.PROXY_WALLET = '0x1111111111111111111111111111111111111111';

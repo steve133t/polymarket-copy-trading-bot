@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CopyStrategy, CopyStrategyConfig, parseTieredMultipliers } from './copyStrategy';
+import { parseEnvValue } from '../utils/parseEnv';
 dotenv.config();
 
 /**
@@ -178,25 +179,7 @@ export const parseUserAddresses = (input: string): string[] => {
     return addresses;
 };
 
-const parseEnvValue = (content: string, key: string): string => {
-    const line = content
-        .split('\n')
-        .find((envLine) => envLine.trim().startsWith(`${key} =`) || envLine.trim().startsWith(`${key}=`));
-
-    if (!line) return '';
-
-    const equalIndex = line.indexOf('=');
-    let value = line.slice(equalIndex + 1).trim();
-    const commentIndex = value.indexOf(' #');
-    if (commentIndex !== -1) value = value.slice(0, commentIndex).trim();
-    if (
-        (value.startsWith("'") && value.endsWith("'")) ||
-        (value.startsWith('"') && value.endsWith('"'))
-    ) {
-        value = value.slice(1, -1);
-    }
-    return value;
-};
+// parseEnvValue is imported from ../utils/parseEnv
 
 export const getCurrentUserAddresses = (): string[] => {
     const envPath = path.join(process.cwd(), '.env');
@@ -249,8 +232,9 @@ const parseCopyStrategy = (): CopyStrategyConfig => {
         return config;
     }
 
-    // Parse new copy strategy configuration
-    const strategyStr = (process.env.COPY_STRATEGY || 'PERCENTAGE').toUpperCase();
+    // Parse new copy strategy configuration — strip any surrounding quotes first
+    const rawStrategy = (process.env.COPY_STRATEGY || 'PERCENTAGE').trim().replace(/^['"]|['"]$/g, '');
+    const strategyStr = rawStrategy.toUpperCase();
     const strategy =
         CopyStrategy[strategyStr as keyof typeof CopyStrategy] || CopyStrategy.PERCENTAGE;
 

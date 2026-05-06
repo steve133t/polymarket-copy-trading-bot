@@ -2,49 +2,16 @@ import { NextResponse } from 'next/server';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BotSettings, SettingsResponse, SettingsUpdate } from '@/types/settings';
+import { parseEnvFile, ENV_PATH } from '@/lib/envUtils';
 
-const ENV_PATH = path.join(process.cwd(), '..', '.env');
 const REPORTS_DIR = path.join(process.cwd(), '..', 'trader_reports');
 
-// Parse .env file into key-value pairs
-function parseEnvFile(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  const lines = content.split('\n');
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // Skip comments and empty lines
-    if (!trimmed || trimmed.startsWith('#')) continue;
-
-    const equalIndex = trimmed.indexOf('=');
-    if (equalIndex === -1) continue;
-
-    const key = trimmed.slice(0, equalIndex).trim();
-    let value = trimmed.slice(equalIndex + 1).trim();
-
-    // Remove surrounding quotes if present
-    if ((value.startsWith("'") && value.endsWith("'")) ||
-        (value.startsWith('"') && value.endsWith('"'))) {
-      value = value.slice(1, -1);
-    }
-
-    // Handle inline comments
-    const commentIndex = value.indexOf(' #');
-    if (commentIndex !== -1) {
-      value = value.slice(0, commentIndex).trim();
-    }
-
-    result[key] = value;
-  }
-
-  return result;
-}
-
-// Remove surrounding quotes from a string
 function removeQuotes(s: string): string {
   const trimmed = s.trim();
-  if ((trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-      (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+  if (
+    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"'))
+  ) {
     return trimmed.slice(1, -1);
   }
   return trimmed;

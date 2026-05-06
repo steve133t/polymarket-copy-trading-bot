@@ -1,41 +1,8 @@
 import { NextResponse } from 'next/server';
 import { HealthCheckResult } from '@/types/settings';
+import { readEnvKey } from '@/lib/envUtils';
 
-// Environment variables are read from the main project's .env
-// We need to read them manually since Next.js has its own env handling
-import * as fs from 'fs';
-import * as path from 'path';
-
-const ENV_PATH = path.join(process.cwd(), '..', '.env');
-
-function getEnvValue(key: string): string | undefined {
-  try {
-    if (!fs.existsSync(ENV_PATH)) return undefined;
-    const content = fs.readFileSync(ENV_PATH, 'utf-8');
-    const lines = content.split('\n');
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-
-      const equalIndex = trimmed.indexOf('=');
-      if (equalIndex === -1) continue;
-
-      const lineKey = trimmed.slice(0, equalIndex).trim();
-      if (lineKey === key) {
-        let value = trimmed.slice(equalIndex + 1).trim();
-        if ((value.startsWith("'") && value.endsWith("'")) ||
-            (value.startsWith('"') && value.endsWith('"'))) {
-          value = value.slice(1, -1);
-        }
-        return value;
-      }
-    }
-  } catch {
-    return undefined;
-  }
-  return undefined;
-}
+const getEnvValue = readEnvKey;
 
 export async function GET() {
   const result: HealthCheckResult = {
