@@ -12,6 +12,7 @@ export enum CopyStrategy {
     PERCENTAGE = 'PERCENTAGE',
     FIXED = 'FIXED',
     ADAPTIVE = 'ADAPTIVE',
+    BALANCE_PERCENT = 'BALANCE_PERCENT',
 }
 
 /**
@@ -94,6 +95,11 @@ export function calculateOrderSize(
             const adaptivePercent = calculateAdaptivePercent(config, traderOrderSize);
             baseAmount = traderOrderSize * (adaptivePercent / 100);
             reasoning = `Adaptive ${adaptivePercent.toFixed(1)}% of trader's $${traderOrderSize.toFixed(2)} = $${baseAmount.toFixed(2)}`;
+            break;
+
+        case CopyStrategy.BALANCE_PERCENT:
+            baseAmount = availableBalance * (config.copySize / 100);
+            reasoning = `${config.copySize}% of your balance $${availableBalance.toFixed(2)} = $${baseAmount.toFixed(2)}`;
             break;
 
         default:
@@ -206,6 +212,10 @@ export function validateCopyStrategyConfig(config: CopyStrategyConfig): string[]
 
     if (config.strategy === CopyStrategy.PERCENTAGE && config.copySize > 100) {
         errors.push('copySize for PERCENTAGE strategy should be <= 100');
+    }
+
+    if (config.strategy === CopyStrategy.BALANCE_PERCENT && config.copySize > 100) {
+        errors.push('copySize for BALANCE_PERCENT strategy should be <= 100');
     }
 
     // Validate limits
