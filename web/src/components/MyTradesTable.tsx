@@ -10,7 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
 interface MyTradesTableProps {
@@ -70,12 +70,13 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
     return sortDir === 'asc' ? (aVal as number) - (bVal as number) : (bVal as number) - (aVal as number);
   });
 
-  const SortButton = ({ label, sortKeyName }: { label: string; sortKeyName: SortKey }) => (
+  const SortButton = ({ label, sortKeyName, title }: { label: string; sortKeyName: SortKey; title?: string }) => (
     <Button
       variant="ghost"
       size="sm"
       onClick={() => handleSort(sortKeyName)}
       className="h-auto p-0 hover:bg-transparent font-semibold"
+      title={title}
     >
       {label}
       {sortKey === sortKeyName && (
@@ -97,31 +98,50 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
     <Card>
       <CardHeader>
         <CardTitle>My Copy Trades by Trader</CardTitle>
+        <CardDescription>
+          Your trades on your wallet, grouped by which tracked trader triggered them. Click a row to
+          see individual trades. Traders with no match appear under "Unmatched Trades".
+        </CardDescription>
       </CardHeader>
       <CardContent>
+        {/* Cash flow disclaimer */}
+        <p className="text-xs text-muted-foreground mb-3 p-2 bg-muted/40 rounded">
+          💡 <strong>Net Flow</strong> = total USDC received from sells minus total USDC spent on
+          buys. This is <em>not</em> your realized P&amp;L — open positions still hold value.
+          See the P&amp;L cards above for real position data.
+        </p>
+
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>
-                <SortButton label="Trader" sortKeyName="traderLabel" />
+                <SortButton label="Trader" sortKeyName="traderLabel" title="Tracked trader whose trades you copied" />
               </TableHead>
               <TableHead className="text-right">
-                <SortButton label="Trades" sortKeyName="tradeCount" />
+                <SortButton label="Trades" sortKeyName="tradeCount" title="Number of trades copied from this trader" />
+              </TableHead>
+              <TableHead className="text-right" title="Total USDC spent buying positions">
+                <SortButton label="Spent" sortKeyName="totalBought" title="Total USDC you spent buying" />
+              </TableHead>
+              <TableHead className="text-right" title="Total USDC received from selling positions">
+                Received
               </TableHead>
               <TableHead className="text-right">
-                <SortButton label="Bought" sortKeyName="totalBought" />
+                <SortButton
+                  label="Net Flow"
+                  sortKeyName="pnl"
+                  title="Received minus Spent. Positive = more sold than bought so far."
+                />
               </TableHead>
               <TableHead className="text-right">
-                Sold
+                <SortButton
+                  label="Cash ROI"
+                  sortKeyName="roi"
+                  title="Net Flow ÷ Spent. Based on cash flow only — doesn't include open position value."
+                />
               </TableHead>
-              <TableHead className="text-right">
-                <SortButton label="Cash Flow" sortKeyName="pnl" />
-              </TableHead>
-              <TableHead className="text-right">
-                <SortButton label="ROI %" sortKeyName="roi" />
-              </TableHead>
-              <TableHead className="text-right">
-                Avg Trade
+              <TableHead className="text-right" title="Average size per trade">
+                Avg Size
               </TableHead>
             </TableRow>
           </TableHeader>
@@ -138,11 +158,13 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
                 >
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
-                      <span>{expandedTrader === trader.traderAddress ? '▼' : '▶'}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {expandedTrader === trader.traderAddress ? '▼' : '▶'}
+                      </span>
                       <div>
                         <div>{trader.traderLabel}</div>
                         {trader.traderAddress !== 'unmatched' && (
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-xs text-muted-foreground font-mono">
                             {trader.traderAddress.slice(0, 8)}...
                           </div>
                         )}
@@ -178,10 +200,15 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
                       : '-'}
                   </TableCell>
                 </TableRow>
+
                 {expandedTrader === trader.traderAddress && (
                   <TableRow>
                     <TableCell colSpan={7} className="bg-muted/30 p-4">
-                      <TradesList trades={trader.trades} formatCurrency={formatCurrency} formatTime={formatTime} />
+                      <TradesList
+                        trades={trader.trades}
+                        formatCurrency={formatCurrency}
+                        formatTime={formatTime}
+                      />
                     </TableCell>
                   </TableRow>
                 )}
@@ -191,6 +218,25 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+function CopyLagBadge({ seconds }: { seconds: number | null }) {
+  if (seconds === null) return <span className="text-muted-foreground">—</span>;
+
+  const label = seconds < 60 ? `${seconds}s` : `${Math.round(seconds / 60)}m`;
+
+  const color =
+    seconds <= 10
+      ? 'text-green-500'
+      : seconds <= 60
+      ? 'text-yellow-500'
+      : 'text-red-400';
+
+  return (
+    <span className={`font-mono ${color}`} title={`${seconds} seconds after the tracked trader's trade`}>
+      {label}
+    </span>
   );
 }
 
@@ -206,61 +252,72 @@ function TradesList({
   const sortedTrades = [...trades].sort((a, b) => b.timestamp - a.timestamp);
 
   if (trades.length === 0) {
-    return <p className="text-muted-foreground">No trades</p>;
+    return <p className="text-muted-foreground text-sm">No trades in this period.</p>;
   }
 
   return (
-    <div className="max-h-80 overflow-y-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Time</TableHead>
-            <TableHead>Side</TableHead>
-            <TableHead>Market</TableHead>
-            <TableHead className="text-right">Size</TableHead>
-            <TableHead className="text-right">Price</TableHead>
-            <TableHead className="text-right">Delay</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sortedTrades.slice(0, 50).map((trade, idx) => (
-            <TableRow key={`${trade.timestamp}-${trade.conditionId}-${trade.asset}-${trade.side}-${idx}`} className="text-sm">
-              <TableCell className="text-xs text-muted-foreground">
-                {formatTime(trade.timestamp)}
-              </TableCell>
-              <TableCell>
-                <span
-                  className={
-                    trade.side === 'BUY' ? 'text-green-500' : 'text-red-500'
-                  }
-                >
-                  {trade.side}
-                </span>
-              </TableCell>
-              <TableCell className="max-w-xs truncate" title={trade.title}>
-                {trade.title.length > 40
-                  ? trade.title.slice(0, 37) + '...'
-                  : trade.title}
-                <span className="text-muted-foreground ml-1">({trade.outcome})</span>
-              </TableCell>
-              <TableCell className="text-right font-mono">
-                {formatCurrency(trade.usdcSize)}
-              </TableCell>
-              <TableCell className="text-right font-mono">
-                {(trade.price * 100).toFixed(1)}%
-              </TableCell>
-              <TableCell className="text-right font-mono text-muted-foreground">
-                {trade.timeDiff !== null ? `${trade.timeDiff}s` : '-'}
-              </TableCell>
+    <div>
+      <p className="text-xs text-muted-foreground mb-2">
+        <strong>Copy lag</strong> = how many seconds after the tracked trader's trade that your copy
+        executed. Green ≤ 10s · Yellow ≤ 60s · Red &gt; 60s.
+      </p>
+      <div className="max-h-80 overflow-y-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Time</TableHead>
+              <TableHead>Side</TableHead>
+              <TableHead>Market</TableHead>
+              <TableHead className="text-right" title="How much USDC you put in (buy) or received (sell)">
+                Your Size
+              </TableHead>
+              <TableHead className="text-right" title="Token price at time of trade — also the implied probability (e.g. $0.72 = 72% chance)">
+                Entry Price
+              </TableHead>
+              <TableHead className="text-right" title="Seconds between the trader's trade and your copy">
+                Copy Lag
+              </TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {trades.length > 50 && (
-        <p className="text-sm text-muted-foreground mt-2">
-          Showing first 50 of {trades.length} trades
-        </p>
-      )}
+          </TableHeader>
+          <TableBody>
+            {sortedTrades.slice(0, 50).map((trade, idx) => (
+              <TableRow
+                key={`${trade.timestamp}-${trade.conditionId}-${trade.asset}-${trade.side}-${idx}`}
+                className="text-sm"
+              >
+                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                  {formatTime(trade.timestamp)}
+                </TableCell>
+                <TableCell>
+                  <span className={trade.side === 'BUY' ? 'text-green-500 font-medium' : 'text-red-500 font-medium'}>
+                    {trade.side}
+                  </span>
+                </TableCell>
+                <TableCell className="max-w-xs">
+                  <span className="truncate block" title={trade.title}>
+                    {trade.title.length > 40 ? trade.title.slice(0, 37) + '…' : trade.title}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{trade.outcome}</span>
+                </TableCell>
+                <TableCell className="text-right font-mono">
+                  {formatCurrency(trade.usdcSize)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-muted-foreground" title="Token price = implied probability">
+                  ${trade.price.toFixed(3)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <CopyLagBadge seconds={trade.timeDiff} />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {trades.length > 50 && (
+          <p className="text-xs text-muted-foreground mt-2 pl-1">
+            Showing 50 of {trades.length} trades
+          </p>
+        )}
+      </div>
     </div>
   );
 }
