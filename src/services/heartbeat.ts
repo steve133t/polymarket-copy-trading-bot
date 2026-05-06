@@ -16,7 +16,7 @@ async function writeHeartbeat(): Promise<void> {
         if (!db) return;
 
         await db.collection(HEARTBEAT_COLLECTION).updateOne(
-            { _id: HEARTBEAT_DOC_ID },
+            { _id: HEARTBEAT_DOC_ID as any },
             {
                 $set: {
                     lastSeen: new Date(),
