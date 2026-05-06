@@ -10,8 +10,6 @@ interface ActivePositionsPieProps {
 }
 
 export function ActivePositionsPie({ traders }: ActivePositionsPieProps) {
-  // Aggregate open positions across all traders
-  const totalOpen = traders.reduce((sum, t) => sum + t.positions.open, 0);
   const totalWins = traders.reduce((sum, t) => sum + t.positions.winners, 0);
   const totalLosses = traders.reduce((sum, t) => sum + t.positions.losers, 0);
 
@@ -26,7 +24,7 @@ export function ActivePositionsPie({ traders }: ActivePositionsPieProps) {
   return (
     <div className="bg-card rounded-xl border p-4 flex flex-col items-center justify-center h-full">
       <span className="text-sm font-medium mb-0.5">Trader Positions</span>
-      <span className="text-xs text-muted-foreground mb-2">Tracked traders' open markets</span>
+      <span className="text-xs text-muted-foreground mb-2">Resolved positions — tracked traders</span>
       <div className="flex items-center gap-4">
         {/* Mini pie */}
         <div className="relative" style={{ width: 70, height: 70 }}>
@@ -65,10 +63,7 @@ export function ActivePositionsPie({ traders }: ActivePositionsPieProps) {
             <span className="text-xs text-muted-foreground">Losses</span>
             <span className="text-sm font-bold font-mono text-red-500">{totalLosses}</span>
           </div>
-          <div className="flex items-center gap-2 pt-1 border-t border-border">
-            <span className="text-xs text-muted-foreground">Open</span>
-            <span className="text-sm font-bold font-mono text-blue-500">{totalOpen}</span>
-          </div>
+
         </div>
       </div>
     </div>

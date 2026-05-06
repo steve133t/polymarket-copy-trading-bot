@@ -20,6 +20,8 @@ import { PreviewStatsView } from '@/components/PreviewStatsView';
 import { StatusBar } from '@/components/StatusBar';
 import { Button } from '@/components/ui/button';
 import { TimeRangeFilter, TimeRange } from '@/components/TimeRangeFilter';
+import BotOfflineAlert from '@/components/BotOfflineAlert';
+import { useBotStatus } from '@/hooks/useBotStatus';
 
 type ViewMode = 'traders' | 'my-trades' | 'paper' | 'settings';
 
@@ -31,6 +33,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
   const [countdown, setCountdown] = useState(30);
+  const botStatus = useBotStatus();
 
   const REFRESH_INTERVAL = 30;
 
@@ -138,12 +141,27 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background dark">
+      <BotOfflineAlert />
       {/* Sticky top nav — Polymarket-style */}
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b border-border">
         <div className="container mx-auto px-4 md:px-8 flex items-center justify-between h-14">
-          <span className="font-semibold text-sm tracking-tight text-foreground">
-            Polymarket Bot
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-sm tracking-tight text-foreground">
+              Polymarket Bot
+            </span>
+            {botStatus !== null && (
+              <span
+                className={`flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-full border ${
+                  botStatus
+                    ? 'text-green-400 border-green-500/30 bg-green-500/10'
+                    : 'text-red-400 border-red-500/30 bg-red-500/10'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${botStatus ? 'bg-green-400' : 'bg-red-400'}`} />
+                {botStatus ? 'Bot live' : 'Bot offline'}
+              </span>
+            )}
+          </div>
           <nav className="flex items-center">
             {navItems.map(({ id, label }) => (
               <button
