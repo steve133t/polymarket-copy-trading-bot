@@ -41,7 +41,7 @@ export function TrendArrow({ traders, timeRange = '30d' }: TrendArrowProps) {
 
   return (
     <div className="bg-card rounded-xl border p-3 flex flex-col h-full">
-      <span className="text-xs text-muted-foreground mb-1">Their Realized P&L</span>
+      <span className="text-xs text-muted-foreground mb-1">Realized P&L</span>
       <div className="flex-1 flex items-center justify-center">
         <div className="text-center">
           <span className={`text-4xl font-bold ${getArrowColor()}`}>

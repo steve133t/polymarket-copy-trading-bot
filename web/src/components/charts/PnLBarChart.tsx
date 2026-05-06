@@ -46,7 +46,7 @@ export function PnLBarChart({ traders, compact = false, timeRange = 'all' }: PnL
     <Card className={compact ? 'h-full' : ''}>
       <CardHeader className={compact ? 'pb-2 pt-3 px-4' : ''}>
         <div className="flex items-center justify-between">
-          <CardTitle className={compact ? 'text-sm' : ''}>Their P&L</CardTitle>
+          <CardTitle className={compact ? 'text-sm' : ''}>P&L</CardTitle>
           <span
             className={`font-mono font-bold ${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'} ${compact ? 'text-lg' : 'text-xl'}`}
           >

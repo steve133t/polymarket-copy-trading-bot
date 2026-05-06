@@ -179,7 +179,7 @@ export function TradersTable({ traders }: TradersTableProps) {
                 <SortButton label="ROI %" sortKeyName="roi" />
               </TableHead>
               <TableHead className="text-right">
-                <SortButton label="Their Win Rate" sortKeyName="winRate" />
+                <SortButton label="Win Rate" sortKeyName="winRate" />
               </TableHead>
               <TableHead className="text-right">
                 <SortButton label="Volume" sortKeyName="volume" />
@@ -187,7 +187,7 @@ export function TradersTable({ traders }: TradersTableProps) {
               <TableHead className="text-right">
                 <SortButton label="Trades" sortKeyName="trades" />
               </TableHead>
-              <TableHead className="text-right">Their W/L</TableHead>
+              <TableHead className="text-right">Positions</TableHead>
               <TableHead className="text-right">Monthly ROI</TableHead>
             </TableRow>
           </TableHeader>

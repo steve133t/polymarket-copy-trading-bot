@@ -67,7 +67,7 @@ export function VolumeLineChart({ traders, compact = false, timeRange = 'all' }:
     return (
       <Card className={compact ? 'h-full' : ''}>
         <CardHeader className={compact ? 'pb-2 pt-3 px-4' : ''}>
-          <CardTitle className={compact ? 'text-sm' : ''}>Their Volume</CardTitle>
+          <CardTitle className={compact ? 'text-sm' : ''}>Trading Volume</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground text-sm">No monthly data available</p>
@@ -83,7 +83,7 @@ export function VolumeLineChart({ traders, compact = false, timeRange = 'all' }:
   return (
     <Card className={compact ? 'h-full' : ''}>
       <CardHeader className={compact ? 'pb-2 pt-3 px-4' : ''}>
-        <CardTitle className={compact ? 'text-sm' : ''}>Their Volume</CardTitle>
+        <CardTitle className={compact ? 'text-sm' : ''}>Trading Volume</CardTitle>
       </CardHeader>
       <CardContent className={compact ? 'pb-3 px-2' : ''}>
         <ResponsiveContainer width="100%" height={compact ? 140 : 250}>
