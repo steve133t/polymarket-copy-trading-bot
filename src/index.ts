@@ -7,7 +7,6 @@ import autoResolver, { stopAutoResolver } from './services/autoResolver';
 import { startHeartbeat, stopHeartbeat } from './services/heartbeat';
 import Logger from './utils/logger';
 import { performHealthCheck, logHealthCheck } from './utils/healthCheck';
-import test from './test/test';
 
 const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const PROXY_WALLET = ENV.PROXY_WALLET;

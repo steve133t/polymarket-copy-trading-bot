@@ -4,6 +4,7 @@ import { UserActivityInterface, UserPositionInterface } from '../interfaces/User
 import { getUserActivityModel } from '../models/userHistory';
 import Logger from './logger';
 import { calculateOrderSize, getTradeMultiplier } from '../config/copyStrategy';
+import { extractOrderError, isInsufficientBalanceOrAllowanceError } from './orderUtils';
 
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
@@ -15,53 +16,6 @@ const COPY_PERCENTAGE = ENV.COPY_PERCENTAGE;
 // Polymarket minimum order sizes
 const MIN_ORDER_SIZE_USD = 1.0; // Minimum order size in USD for BUY orders
 const MIN_ORDER_SIZE_TOKENS = 1.0; // Minimum order size in tokens for SELL/MERGE orders
-
-const extractOrderError = (response: unknown): string | undefined => {
-    if (!response) {
-        return undefined;
-    }
-
-    if (typeof response === 'string') {
-        return response;
-    }
-
-    if (typeof response === 'object') {
-        const data = response as Record<string, unknown>;
-
-        const directError = data.error;
-        if (typeof directError === 'string') {
-            return directError;
-        }
-
-        if (typeof directError === 'object' && directError !== null) {
-            const nested = directError as Record<string, unknown>;
-            if (typeof nested.error === 'string') {
-                return nested.error;
-            }
-            if (typeof nested.message === 'string') {
-                return nested.message;
-            }
-        }
-
-        if (typeof data.errorMsg === 'string') {
-            return data.errorMsg;
-        }
-
-        if (typeof data.message === 'string') {
-            return data.message;
-        }
-    }
-
-    return undefined;
-};
-
-const isInsufficientBalanceOrAllowanceError = (message: string | undefined): boolean => {
-    if (!message) {
-        return false;
-    }
-    const lower = message.toLowerCase();
-    return lower.includes('not enough balance') || lower.includes('allowance');
-};
 
 const postOrder = async (
     clobClient: ClobClient,

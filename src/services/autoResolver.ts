@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { ENV } from '../config/env';
 import fetchData from '../utils/fetchData';
 import Logger from '../utils/logger';
+import { extractOrderError, isInsufficientBalanceOrAllowanceError } from '../utils/orderUtils';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
@@ -75,53 +76,6 @@ export const stopAutoResolver = () => {
     Logger.info('Auto resolver shutdown requested...');
 };
 
-const extractOrderError = (response: unknown): string | undefined => {
-    if (!response) {
-        return undefined;
-    }
-
-    if (typeof response === 'string') {
-        return response;
-    }
-
-    if (typeof response === 'object') {
-        const data = response as Record<string, unknown>;
-
-        const directError = data.error;
-        if (typeof directError === 'string') {
-            return directError;
-        }
-
-        if (typeof directError === 'object' && directError !== null) {
-            const nested = directError as Record<string, unknown>;
-            if (typeof nested.error === 'string') {
-                return nested.error;
-            }
-            if (typeof nested.message === 'string') {
-                return nested.message;
-            }
-        }
-
-        if (typeof data.errorMsg === 'string') {
-            return data.errorMsg;
-        }
-
-        if (typeof data.message === 'string') {
-            return data.message;
-        }
-    }
-
-    return undefined;
-};
-
-const isInsufficientBalanceOrAllowanceError = (message: string | undefined): boolean => {
-    if (!message) {
-        return false;
-    }
-    const lower = message.toLowerCase();
-    return lower.includes('not enough balance') || lower.includes('allowance');
-};
-
 const updatePolymarketCache = async (clobClient: ClobClient, tokenId: string) => {
     try {
         await clobClient.updateBalanceAllowance({
@@ -137,7 +91,7 @@ const updatePolymarketCache = async (clobClient: ClobClient, tokenId: string) =>
  * Try to sell position via CLOB orderbook
  * Returns: tokens sold, proceeds, and whether orderbook was available
  */
-const trySellPosition = async (
+export const trySellPosition = async (
     clobClient: ClobClient,
     position: Position
 ): Promise<{ sold: number; proceeds: number; orderbookAvailable: boolean }> => {
@@ -294,7 +248,7 @@ const loadPositions = async (address: string): Promise<Position[]> => {
 /**
  * Resolve a single position - try sell first, fallback to redeem
  */
-const resolvePosition = async (
+export const resolvePosition = async (
     clobClient: ClobClient,
     position: Position
 ): Promise<ResolveResult> => {
