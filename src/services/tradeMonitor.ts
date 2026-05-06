@@ -1,22 +1,50 @@
-import { ENV } from '../config/env';
+import { ENV, getCurrentUserAddresses } from '../config/env';
 import { getUserActivityModel, getUserPositionModel } from '../models/userHistory';
 import fetchData from '../utils/fetchData';
 import Logger from '../utils/logger';
 
-const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const TOO_OLD_TIMESTAMP = ENV.TOO_OLD_TIMESTAMP;
 const FETCH_INTERVAL = ENV.FETCH_INTERVAL;
 
-if (!USER_ADDRESSES || USER_ADDRESSES.length === 0) {
+if (!ENV.USER_ADDRESSES || ENV.USER_ADDRESSES.length === 0) {
     throw new Error('USER_ADDRESSES is not defined or empty');
 }
 
-// Create activity and position models for each user
-const userModels = USER_ADDRESSES.map((address) => ({
+// Create activity and position models for each user. This list is refreshed
+// from .env while the process runs so settings changes do not require restart.
+let userModels = ENV.USER_ADDRESSES.map((address) => ({
     address,
     UserActivity: getUserActivityModel(address),
     UserPosition: getUserPositionModel(address),
 }));
+
+const getTrackedAddresses = () => userModels.map(({ address }) => address);
+
+const refreshUserModels = () => {
+    const configuredAddresses = getCurrentUserAddresses();
+    const existingModels = new Map(userModels.map((model) => [model.address, model]));
+    const nextModels = configuredAddresses.map((address) => existingModels.get(address) || {
+        address,
+        UserActivity: getUserActivityModel(address),
+        UserPosition: getUserPositionModel(address),
+    });
+
+    const currentAddresses = new Set(userModels.map(({ address }) => address));
+    const nextAddresses = new Set(configuredAddresses);
+    const added = configuredAddresses.filter((address) => !currentAddresses.has(address));
+    const removed = userModels
+        .map(({ address }) => address)
+        .filter((address) => !nextAddresses.has(address));
+
+    if (added.length > 0) {
+        Logger.success(`Now monitoring ${added.length} new trader(s): ${added.map((address) => `${address.slice(0, 6)}...${address.slice(-4)}`).join(', ')}`);
+    }
+    if (removed.length > 0) {
+        Logger.warning(`Stopped monitoring ${removed.length} trader(s): ${removed.map((address) => `${address.slice(0, 6)}...${address.slice(-4)}`).join(', ')}`);
+    }
+
+    userModels = nextModels;
+};
 
 const init = async () => {
     const counts: number[] = [];
@@ -25,7 +53,7 @@ const init = async () => {
         counts.push(count);
     }
     Logger.clearLine();
-    Logger.dbConnection(USER_ADDRESSES, counts);
+    Logger.dbConnection(getTrackedAddresses(), counts);
 
     // Show your own positions first
     try {
@@ -102,10 +130,12 @@ const init = async () => {
         positionDetails.push(topPositions);
     }
     Logger.clearLine();
-    Logger.tradersPositions(USER_ADDRESSES, positionCounts, positionDetails, profitabilities);
+    Logger.tradersPositions(getTrackedAddresses(), positionCounts, positionDetails, profitabilities);
 };
 
 const fetchTradeData = async () => {
+    refreshUserModels();
+
     for (const { address, UserActivity, UserPosition } of userModels) {
         try {
             // Fetch trade activities from Polymarket API
@@ -225,8 +255,9 @@ export const stopTradeMonitor = () => {
 };
 
 const tradeMonitor = async () => {
+    refreshUserModels();
     await init();
-    Logger.success(`Monitoring ${USER_ADDRESSES.length} trader(s) every ${FETCH_INTERVAL}s`);
+    Logger.success(`Monitoring ${getTrackedAddresses().length} trader(s) every ${FETCH_INTERVAL}s`);
     Logger.separator();
 
     // On first run, mark all existing historical trades as already processed

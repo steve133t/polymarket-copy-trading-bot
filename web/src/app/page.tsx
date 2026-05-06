@@ -16,11 +16,12 @@ import { ActivePositionsPie } from '@/components/charts/ActivePositionsPie';
 import { TradersTable } from '@/components/TradersTable';
 import { MyTradesView } from '@/components/MyTradesView';
 import { SettingsView } from '@/components/SettingsView';
+import { PreviewStatsView } from '@/components/PreviewStatsView';
 import { StatusBar } from '@/components/StatusBar';
 import { Button } from '@/components/ui/button';
 import { TimeRangeFilter, TimeRange } from '@/components/TimeRangeFilter';
 
-type ViewMode = 'traders' | 'my-trades' | 'settings';
+type ViewMode = 'traders' | 'my-trades' | 'paper' | 'settings';
 
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>('traders');
@@ -102,6 +103,8 @@ export default function Home() {
         );
       case 'my-trades':
         return <>My Copy Trading Performance</>;
+      case 'paper':
+        return <>Paper trading — trades detected but not executed</>;
       case 'settings':
         return <>Configure bot settings and execute actions</>;
     }
@@ -138,6 +141,13 @@ export default function Home() {
               </Button>
               <Button
                 size="sm"
+                variant={viewMode === 'paper' ? 'default' : 'outline'}
+                onClick={() => setViewMode('paper')}
+              >
+                📄 Paper
+              </Button>
+              <Button
+                size="sm"
                 variant={viewMode === 'settings' ? 'default' : 'outline'}
                 onClick={() => setViewMode('settings')}
               >
@@ -151,13 +161,16 @@ export default function Home() {
           <>
             {/* Status Bar with Time Range Filter */}
             <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <StatusBar
-                lastUpdated={traders[0]?.analysisDate}
-                totalItems={traders.length}
-                itemLabel="traders"
-                refreshing={refreshing}
-                onRefresh={() => fetchTraders(true)}
-              />
+            <StatusBar
+              lastUpdated={traders[0]?.analysisDate}
+              totalItems={traders.length}
+              itemLabel="traders"
+              refreshing={refreshing}
+              onRefresh={() => fetchTraders(true)}
+            />
+              {error ? (
+                <p className="text-sm text-red-400">{error}</p>
+              ) : null}
               <TimeRangeFilter value={timeRange} onChange={setTimeRange} />
             </div>
 
@@ -207,6 +220,8 @@ export default function Home() {
         )}
 
         {viewMode === 'my-trades' && <MyTradesView />}
+
+        {viewMode === 'paper' && <PreviewStatsView />}
 
         {viewMode === 'settings' && <SettingsView />}
       </div>

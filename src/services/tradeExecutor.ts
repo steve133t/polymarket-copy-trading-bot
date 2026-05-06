@@ -1,24 +1,47 @@
 import { ClobClient } from '@polymarket/clob-client';
 import { UserActivityInterface, UserPositionInterface } from '../interfaces/User';
-import { ENV } from '../config/env';
+import { ENV, getCurrentUserAddresses } from '../config/env';
 import { getUserActivityModel } from '../models/userHistory';
 import fetchData from '../utils/fetchData';
 import getMyBalance from '../utils/getMyBalance';
 import postOrder from '../utils/postOrder';
 import Logger from '../utils/logger';
 
-const USER_ADDRESSES = ENV.USER_ADDRESSES;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const TRADE_AGGREGATION_ENABLED = ENV.TRADE_AGGREGATION_ENABLED;
 const TRADE_AGGREGATION_WINDOW_SECONDS = ENV.TRADE_AGGREGATION_WINDOW_SECONDS;
 const TRADE_AGGREGATION_MIN_TOTAL_USD = 1.0; // Polymarket minimum
 
-// Create activity models for each user
-const userActivityModels = USER_ADDRESSES.map((address) => ({
+// Create activity models for each user. This refreshes from .env so trader
+// changes made in the UI are picked up without restarting the process.
+let userActivityModels = ENV.USER_ADDRESSES.map((address) => ({
     address,
     model: getUserActivityModel(address),
 }));
+
+const refreshUserActivityModels = () => {
+    const configuredAddresses = getCurrentUserAddresses();
+    const existingModels = new Map(userActivityModels.map((entry) => [entry.address, entry]));
+    const currentAddresses = new Set(userActivityModels.map(({ address }) => address));
+    const nextAddresses = new Set(configuredAddresses);
+    const added = configuredAddresses.filter((address) => !currentAddresses.has(address));
+    const removed = userActivityModels
+        .map(({ address }) => address)
+        .filter((address) => !nextAddresses.has(address));
+
+    if (added.length > 0) {
+        Logger.success(`Trade executor added ${added.length} trader(s): ${added.map((address) => `${address.slice(0, 6)}...${address.slice(-4)}`).join(', ')}`);
+    }
+    if (removed.length > 0) {
+        Logger.warning(`Trade executor removed ${removed.length} trader(s): ${removed.map((address) => `${address.slice(0, 6)}...${address.slice(-4)}`).join(', ')}`);
+    }
+
+    userActivityModels = configuredAddresses.map((address) => existingModels.get(address) || {
+        address,
+        model: getUserActivityModel(address),
+    });
+};
 
 interface TradeWithUser extends UserActivityInterface {
     userAddress: string;
@@ -42,6 +65,8 @@ interface AggregatedTrade {
 const tradeAggregationBuffer: Map<string, AggregatedTrade> = new Map();
 
 const readTempTrades = async (): Promise<TradeWithUser[]> => {
+    refreshUserActivityModels();
+
     const allTrades: TradeWithUser[] = [];
 
     for (const { address, model } of userActivityModels) {
@@ -290,7 +315,8 @@ export const stopTradeExecutor = () => {
 };
 
 const tradeExecutor = async (clobClient: ClobClient) => {
-    Logger.success(`Trade executor ready for ${USER_ADDRESSES.length} trader(s)`);
+    refreshUserActivityModels();
+    Logger.success(`Trade executor ready for ${userActivityModels.length} trader(s)`);
     if (TRADE_AGGREGATION_ENABLED) {
         Logger.info(
             `Trade aggregation enabled: ${TRADE_AGGREGATION_WINDOW_SECONDS}s window, $${TRADE_AGGREGATION_MIN_TOTAL_USD} minimum`
@@ -344,11 +370,11 @@ const tradeExecutor = async (clobClient: ClobClient) => {
                     const bufferedCount = tradeAggregationBuffer.size;
                     if (bufferedCount > 0) {
                         Logger.waiting(
-                            USER_ADDRESSES.length,
+                            userActivityModels.length,
                             `${bufferedCount} trade group(s) pending`
                         );
                     } else {
-                        Logger.waiting(USER_ADDRESSES.length);
+                        Logger.waiting(userActivityModels.length);
                     }
                     lastCheck = Date.now();
                 }
@@ -365,7 +391,7 @@ const tradeExecutor = async (clobClient: ClobClient) => {
             } else {
                 // Update waiting message every 300ms for smooth animation
                 if (Date.now() - lastCheck > 300) {
-                    Logger.waiting(USER_ADDRESSES.length);
+                    Logger.waiting(userActivityModels.length);
                     lastCheck = Date.now();
                 }
             }

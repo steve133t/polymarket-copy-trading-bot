@@ -315,7 +315,7 @@ export async function PUT(request: Request) {
       success: true,
       settings,
       traderLabels,
-      message: 'Settings updated. Restart the bot to apply changes.',
+      message: 'Settings updated. The running bot will pick up trader wallet changes automatically.',
     });
   } catch (error) {
     console.error('Error updating settings:', error);

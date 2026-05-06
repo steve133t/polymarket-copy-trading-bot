@@ -246,6 +246,7 @@ export function SettingsView() {
           <QuickActionsSection
             healthCheck={healthCheck}
             onRefreshHealth={fetchHealth}
+            onAnalyzeComplete={() => window.location.href = '/?refreshed=1'}
           />
         </div>
       </div>

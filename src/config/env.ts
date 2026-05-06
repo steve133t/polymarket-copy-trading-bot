@@ -1,4 +1,6 @@
 import * as dotenv from 'dotenv';
+import * as fs from 'fs';
+import * as path from 'path';
 import { CopyStrategy, CopyStrategyConfig, parseTieredMultipliers } from './copyStrategy';
 dotenv.config();
 
@@ -135,7 +137,7 @@ validateNumericConfig();
 validateUrls();
 
 // Parse USER_ADDRESSES: supports both comma-separated string and JSON array
-const parseUserAddresses = (input: string): string[] => {
+export const parseUserAddresses = (input: string): string[] => {
     const trimmed = input.trim();
     // Check if it's JSON array format
     if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
@@ -174,6 +176,35 @@ const parseUserAddresses = (input: string): string[] => {
         }
     }
     return addresses;
+};
+
+const parseEnvValue = (content: string, key: string): string => {
+    const line = content
+        .split('\n')
+        .find((envLine) => envLine.trim().startsWith(`${key} =`) || envLine.trim().startsWith(`${key}=`));
+
+    if (!line) return '';
+
+    const equalIndex = line.indexOf('=');
+    let value = line.slice(equalIndex + 1).trim();
+    const commentIndex = value.indexOf(' #');
+    if (commentIndex !== -1) value = value.slice(0, commentIndex).trim();
+    if (
+        (value.startsWith("'") && value.endsWith("'")) ||
+        (value.startsWith('"') && value.endsWith('"'))
+    ) {
+        value = value.slice(1, -1);
+    }
+    return value;
+};
+
+export const getCurrentUserAddresses = (): string[] => {
+    const envPath = path.join(process.cwd(), '.env');
+    const rawValue = fs.existsSync(envPath)
+        ? parseEnvValue(fs.readFileSync(envPath, 'utf-8'), 'USER_ADDRESSES')
+        : process.env.USER_ADDRESSES || '';
+
+    return parseUserAddresses(rawValue);
 };
 
 // Parse copy strategy configuration

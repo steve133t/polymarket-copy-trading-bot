@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { TraderCopyStats, CopyTrade } from '@/types/myTrades';
 import {
   Table,
@@ -127,9 +127,8 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
           </TableHeader>
           <TableBody>
             {sortedTraders.map((trader) => (
-              <>
+              <Fragment key={trader.traderAddress}>
                 <TableRow
-                  key={trader.traderAddress}
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() =>
                     setExpandedTrader(
@@ -180,13 +179,13 @@ export function MyTradesTable({ byTrader }: MyTradesTableProps) {
                   </TableCell>
                 </TableRow>
                 {expandedTrader === trader.traderAddress && (
-                  <TableRow key={`${trader.traderAddress}-details`}>
+                  <TableRow>
                     <TableCell colSpan={7} className="bg-muted/30 p-4">
                       <TradesList trades={trader.trades} formatCurrency={formatCurrency} formatTime={formatTime} />
                     </TableCell>
                   </TableRow>
                 )}
-              </>
+              </Fragment>
             ))}
           </TableBody>
         </Table>
@@ -225,7 +224,7 @@ function TradesList({
         </TableHeader>
         <TableBody>
           {sortedTrades.slice(0, 50).map((trade, idx) => (
-            <TableRow key={idx} className="text-sm">
+            <TableRow key={`${trade.timestamp}-${trade.conditionId}-${trade.asset}-${trade.side}-${idx}`} className="text-sm">
               <TableCell className="text-xs text-muted-foreground">
                 {formatTime(trade.timestamp)}
               </TableCell>

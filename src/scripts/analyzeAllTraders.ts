@@ -115,7 +115,13 @@ const fetchTrades = async (address: string): Promise<Trade[]> => {
 
     while (true) {
         const url = `https://data-api.polymarket.com/activity?user=${address}&type=TRADE&limit=${limit}&offset=${offset}`;
-        const trades = await fetchData(url);
+        let trades: Trade[];
+        try {
+            trades = await fetchData(url);
+        } catch {
+            // Polymarket API returns 400 when offset exceeds their pagination limit
+            break;
+        }
 
         if (!Array.isArray(trades) || trades.length === 0) break;
 
@@ -125,7 +131,6 @@ const fetchTrades = async (address: string): Promise<Trade[]> => {
         if (trades.length < limit) break;
 
         offset += limit;
-        // No limit - fetch all trades
     }
 
     return allTrades;

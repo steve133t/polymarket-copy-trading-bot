@@ -26,6 +26,10 @@ export interface UserActivityInterface {
     bot: boolean;
     botExcutedTime: number;
     myBoughtSize?: number; // Tracks actual tokens we bought
+    previewMode?: boolean;
+    botCopySize?: number;
+    botCopyTokens?: number;
+    botCopyPrice?: number;
 }
 
 export interface UserPositionInterface {

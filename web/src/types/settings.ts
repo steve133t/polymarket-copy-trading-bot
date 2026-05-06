@@ -84,7 +84,8 @@ export type ActionType =
   | 'manual-sell'
   | 'close-resolved'
   | 'redeem-resolved'
-  | 'close-stale';
+  | 'close-stale'
+  | 'analyze';
 
 export interface ActionRequest {
   action: ActionType;

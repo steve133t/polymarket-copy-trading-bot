@@ -11,6 +11,7 @@ import { ActionType, ActionResponse, HealthCheckResult } from '@/types/settings'
 interface QuickActionsSectionProps {
   healthCheck: HealthCheckResult | null;
   onRefreshHealth: () => void;
+  onAnalyzeComplete?: () => void;
 }
 
 interface ActionState {
@@ -18,11 +19,11 @@ interface ActionState {
   result: ActionResponse | null;
 }
 
-export function QuickActionsSection({ healthCheck, onRefreshHealth }: QuickActionsSectionProps) {
+export function QuickActionsSection({ healthCheck, onRefreshHealth, onAnalyzeComplete }: QuickActionsSectionProps) {
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
   const [manualSellKeyword, setManualSellKeyword] = useState('');
 
-  const executeAction = async (action: ActionType, params?: { keyword?: string }) => {
+  const executeAction = async (action: ActionType, params?: { keyword?: string }, onComplete?: () => void) => {
     setActionStates(prev => ({
       ...prev,
       [action]: { loading: true, result: null },
@@ -41,6 +42,7 @@ export function QuickActionsSection({ healthCheck, onRefreshHealth }: QuickActio
         ...prev,
         [action]: { loading: false, result },
       }));
+      if (result.success && onComplete) onComplete();
     } catch (error) {
       setActionStates(prev => ({
         ...prev,
@@ -61,7 +63,8 @@ export function QuickActionsSection({ healthCheck, onRefreshHealth }: QuickActio
     return actionStates[action] || { loading: false, result: null };
   };
 
-  const actions: { action: ActionType; label: string; description: string; variant?: 'default' | 'destructive' | 'outline' }[] = [
+  const actions: { action: ActionType; label: string; description: string; variant?: 'default' | 'destructive' | 'outline'; onComplete?: () => void }[] = [
+    { action: 'analyze', label: 'Analyze & Refresh', description: 'Re-analyze wallets and refresh dashboard', onComplete: onAnalyzeComplete },
     { action: 'health-check', label: 'Health Check', description: 'Verify system status' },
     { action: 'check-stats', label: 'Check Stats', description: 'View positions and P&L' },
     { action: 'close-resolved', label: 'Close Resolved', description: 'Sell positions in resolved markets', variant: 'outline' },
@@ -135,14 +138,14 @@ export function QuickActionsSection({ healthCheck, onRefreshHealth }: QuickActio
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {actions.map(({ action, label, description, variant }) => {
+            {actions.map(({ action, label, description, variant, onComplete }) => {
               const state = getActionState(action);
               return (
                 <Button
                   key={action}
                   variant={variant || 'default'}
                   className="h-auto py-3 flex flex-col items-start text-left"
-                  onClick={() => executeAction(action)}
+                  onClick={() => executeAction(action, undefined, onComplete)}
                   disabled={state.loading}
                 >
                   <span className="font-medium">

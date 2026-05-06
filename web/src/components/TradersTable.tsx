@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { TraderAnalysis } from '@/types/trader';
 import {
   Table,
@@ -193,9 +193,8 @@ export function TradersTable({ traders }: TradersTableProps) {
           </TableHeader>
           <TableBody>
             {sortedTraders.map((trader) => (
-              <>
+              <React.Fragment key={trader.address}>
                 <TableRow
-                  key={trader.address}
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() =>
                     setExpandedTrader(
@@ -260,7 +259,7 @@ export function TradersTable({ traders }: TradersTableProps) {
                     </TableCell>
                   </TableRow>
                 )}
-              </>
+              </React.Fragment>
             ))}
           </TableBody>
         </Table>

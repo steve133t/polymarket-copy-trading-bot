@@ -63,6 +63,10 @@ const activitySchema = new Schema({
     bot: { type: Boolean, required: false },
     botExcutedTime: { type: Number, required: false },
     myBoughtSize: { type: Number, required: false }, // Tracks actual tokens we bought
+    previewMode: { type: Boolean, required: false },
+    botCopySize: { type: Number, required: false },
+    botCopyTokens: { type: Number, required: false },
+    botCopyPrice: { type: Number, required: false },
 });
 
 const getUserPositionModel = (walletAddress: string) => {

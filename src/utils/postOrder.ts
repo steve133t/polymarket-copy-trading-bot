@@ -76,10 +76,51 @@ const postOrder = async (
     const UserActivity = getUserActivityModel(userAddress);
 
     if (ENV.PREVIEW_MODE) {
+        // Calculate what the bot WOULD have copied (using the same logic as live trading)
+        let botCopySize = 0;
+        let botCopyTokens = 0;
+        if (condition === 'buy') {
+            const currentPositionValue = my_position ? my_position.size * my_position.avgPrice : 0;
+            const orderCalc = calculateOrderSize(COPY_STRATEGY_CONFIG, trade.usdcSize, my_balance, currentPositionValue);
+            botCopySize = orderCalc.finalAmount;
+            botCopyTokens = trade.price > 0 ? botCopySize / trade.price : 0;
+        } else {
+            const previousPreviewTrades = await UserActivity.find({
+                asset: trade.asset,
+                conditionId: trade.conditionId,
+                previewMode: true,
+            }).exec();
+
+            const paperTokens = previousPreviewTrades.reduce((sum, previousTrade) => {
+                const tokens = previousTrade.botCopyTokens || 0;
+                return previousTrade.side === 'BUY' ? sum + tokens : sum - tokens;
+            }, 0);
+
+            if (!user_position) {
+                botCopyTokens = Math.max(0, paperTokens);
+            } else if (paperTokens > 0) {
+                const traderSellPercent = trade.size / (user_position.size + trade.size);
+                const multiplier = getTradeMultiplier(COPY_STRATEGY_CONFIG, trade.usdcSize);
+                botCopyTokens = Math.min(paperTokens, paperTokens * traderSellPercent * multiplier);
+            }
+            botCopySize = botCopyTokens * trade.price;
+        }
         Logger.info(
-            `[PREVIEW] Would execute ${condition.toUpperCase()} — asset: ${trade.asset}, size: $${trade.usdcSize.toFixed(2)} @ $${trade.price}`
+            `[PREVIEW] Would execute ${condition.toUpperCase()} — asset: ${trade.asset}, ` +
+            `tracker: $${trade.usdcSize.toFixed(2)}, bot would copy: $${botCopySize.toFixed(2)} @ $${trade.price}`
         );
-        await UserActivity.updateOne({ _id: trade._id }, { bot: true });
+        await UserActivity.updateOne(
+            { _id: trade._id },
+            {
+                $set: {
+                    bot: true,
+                    previewMode: true,
+                    botCopySize,
+                    botCopyTokens,
+                    botCopyPrice: trade.price,
+                },
+            }
+        );
         return;
     }
 

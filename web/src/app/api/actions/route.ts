@@ -13,6 +13,7 @@ const actionScripts: Record<ActionType, string> = {
   'close-resolved': 'close-resolved',
   'redeem-resolved': 'redeem-resolved',
   'close-stale': 'close-stale',
+  'analyze': 'analyze',
 };
 
 // Execute npm script and return output
@@ -30,13 +31,14 @@ async function runScript(script: string, args: string[] = []): Promise<{ success
     proc.stdout.on('data', (data) => chunks.push(data));
     proc.stderr.on('data', (data) => errorChunks.push(data));
 
+    const timeoutMs = script === 'analyze' ? 300000 : 60000;
     const timeout = setTimeout(() => {
       proc.kill();
       resolve({
         success: false,
-        output: 'Script timed out after 60 seconds',
+        output: `Script timed out after ${timeoutMs / 1000} seconds`,
       });
-    }, 60000); // 60 second timeout
+    }, timeoutMs);
 
     proc.on('close', (code) => {
       clearTimeout(timeout);
