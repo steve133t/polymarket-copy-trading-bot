@@ -24,6 +24,7 @@ async function writeHeartbeat(): Promise<void> {
                     version: '1.0',
                     previewMode: ENV.PREVIEW_MODE,
                     trackedAddresses: ENV.USER_ADDRESSES.length,
+                    pid: process.pid,
                 },
             },
             { upsert: true }

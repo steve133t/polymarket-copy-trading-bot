@@ -273,6 +273,29 @@ export async function PUT(request: Request) {
     // Write updated .env file
     fs.writeFileSync(ENV_PATH, newEnvContent, 'utf-8');
 
+    // Signal bot to hot-reload config
+    let reloadStatus = 'unknown';
+    try {
+      const { MongoClient } = require('mongodb');
+      const mongoUri = process.env.MONGO_URI;
+      if (mongoUri) {
+        const client = new MongoClient(mongoUri, { serverSelectionTimeoutMS: 3000 });
+        await client.connect();
+        const doc = await client.db().collection('bot_heartbeat').findOne({ _id: 'main' as any });
+        await client.close();
+        if (doc?.pid) {
+          process.kill(doc.pid, 'SIGHUP');
+          reloadStatus = 'reloaded';
+        } else {
+          reloadStatus = 'bot-not-running';
+        }
+      }
+    } catch (e) {
+      // ESRCH = process not found, EPERM = no permission, etc.
+      const code = (e as NodeJS.ErrnoException).code;
+      reloadStatus = code === 'ESRCH' ? 'bot-not-running' : 'signal-failed';
+    }
+
     // Read back and return updated settings
     const newEnv = parseEnvFile(newEnvContent);
     const settings = envToSettings(newEnv);
@@ -282,7 +305,12 @@ export async function PUT(request: Request) {
       success: true,
       settings,
       traderLabels,
-      message: 'Settings updated. The running bot will pick up trader wallet changes automatically.',
+      reloadStatus,
+      message: reloadStatus === 'reloaded'
+        ? 'Settings applied instantly — bot config reloaded.'
+        : reloadStatus === 'bot-not-running'
+        ? 'Settings saved. Start the bot to apply.'
+        : 'Settings saved. Restart the bot to apply.',
     });
   } catch (error) {
     console.error('Error updating settings:', error);

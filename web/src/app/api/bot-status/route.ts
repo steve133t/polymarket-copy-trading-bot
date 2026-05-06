@@ -34,7 +34,7 @@ export async function GET() {
     const db = await getDb();
     const doc = await db
       .collection(HEARTBEAT_COLLECTION)
-      .findOne({ _id: HEARTBEAT_DOC_ID });
+      .findOne({ _id: HEARTBEAT_DOC_ID as any });
 
     if (!doc) {
       return NextResponse.json<BotStatusResponse>({

@@ -6,13 +6,6 @@ import Logger from './logger';
 import { calculateOrderSize, getTradeMultiplier } from '../config/copyStrategy';
 import { extractOrderError, isInsufficientBalanceOrAllowanceError } from './orderUtils';
 
-const RETRY_LIMIT = ENV.RETRY_LIMIT;
-const COPY_STRATEGY_CONFIG = ENV.COPY_STRATEGY_CONFIG;
-
-// Legacy parameters (for backward compatibility in SELL logic)
-const TRADE_MULTIPLIER = ENV.TRADE_MULTIPLIER;
-const COPY_PERCENTAGE = ENV.COPY_PERCENTAGE;
-
 // Polymarket minimum order sizes
 const MIN_ORDER_SIZE_USD = 1.0; // Minimum order size in USD for BUY orders
 const MIN_ORDER_SIZE_TOKENS = 1.0; // Minimum order size in tokens for SELL/MERGE orders
@@ -35,7 +28,7 @@ const postOrder = async (
         let botCopyTokens = 0;
         if (condition === 'buy') {
             const currentPositionValue = my_position ? my_position.size * my_position.avgPrice : 0;
-            const orderCalc = calculateOrderSize(COPY_STRATEGY_CONFIG, trade.usdcSize, my_balance, currentPositionValue);
+            const orderCalc = calculateOrderSize(ENV.COPY_STRATEGY_CONFIG, trade.usdcSize, my_balance, currentPositionValue);
             botCopySize = orderCalc.finalAmount;
             botCopyTokens = trade.price > 0 ? botCopySize / trade.price : 0;
         } else {
@@ -54,7 +47,7 @@ const postOrder = async (
                 botCopyTokens = Math.max(0, paperTokens);
             } else if (paperTokens > 0) {
                 const traderSellPercent = trade.size / (user_position.size + trade.size);
-                const multiplier = getTradeMultiplier(COPY_STRATEGY_CONFIG, trade.usdcSize);
+                const multiplier = getTradeMultiplier(ENV.COPY_STRATEGY_CONFIG, trade.usdcSize);
                 botCopyTokens = Math.min(paperTokens, paperTokens * traderSellPercent * multiplier);
             }
             botCopySize = botCopyTokens * trade.price;
@@ -99,7 +92,7 @@ const postOrder = async (
 
         let retry = 0;
         let abortDueToFunds = false;
-        while (remaining > 0 && retry < RETRY_LIMIT) {
+        while (remaining > 0 && retry < ENV.RETRY_LIMIT) {
             const orderBook = await clobClient.getOrderBook(trade.asset);
             if (!orderBook.bids || orderBook.bids.length === 0) {
                 Logger.warning('No bids available in order book');
@@ -152,18 +145,18 @@ const postOrder = async (
                 }
                 retry += 1;
                 Logger.warning(
-                    `Order failed (attempt ${retry}/${RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
+                    `Order failed (attempt ${retry}/${ENV.RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
                 );
             }
         }
         if (abortDueToFunds) {
             await UserActivity.updateOne(
                 { _id: trade._id },
-                { bot: true, botExcutedTime: RETRY_LIMIT }
+                { bot: true, botExcutedTime: ENV.RETRY_LIMIT }
             );
             return;
         }
-        if (retry >= RETRY_LIMIT) {
+        if (retry >= ENV.RETRY_LIMIT) {
             await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
         } else {
             await UserActivity.updateOne({ _id: trade._id }, { bot: true });
@@ -180,7 +173,7 @@ const postOrder = async (
 
         // Use new copy strategy system
         const orderCalc = calculateOrderSize(
-            COPY_STRATEGY_CONFIG,
+            ENV.COPY_STRATEGY_CONFIG,
             trade.usdcSize,
             my_balance,
             currentPositionValue
@@ -205,7 +198,7 @@ const postOrder = async (
         let abortDueToFunds = false;
         let totalBoughtTokens = 0; // Track total tokens bought for this trade
 
-        while (remaining > 0 && retry < RETRY_LIMIT) {
+        while (remaining > 0 && retry < ENV.RETRY_LIMIT) {
             const orderBook = await clobClient.getOrderBook(trade.asset);
             if (!orderBook.asks || orderBook.asks.length === 0) {
                 Logger.warning('No asks available in order book');
@@ -275,18 +268,18 @@ const postOrder = async (
                 }
                 retry += 1;
                 Logger.warning(
-                    `Order failed (attempt ${retry}/${RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
+                    `Order failed (attempt ${retry}/${ENV.RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
                 );
             }
         }
         if (abortDueToFunds) {
             await UserActivity.updateOne(
                 { _id: trade._id },
-                { bot: true, botExcutedTime: RETRY_LIMIT, myBoughtSize: totalBoughtTokens }
+                { bot: true, botExcutedTime: ENV.RETRY_LIMIT, myBoughtSize: totalBoughtTokens }
             );
             return;
         }
-        if (retry >= RETRY_LIMIT) {
+        if (retry >= ENV.RETRY_LIMIT) {
             await UserActivity.updateOne(
                 { _id: trade._id },
                 { bot: true, botExcutedTime: retry, myBoughtSize: totalBoughtTokens }
@@ -367,7 +360,7 @@ const postOrder = async (
             }
 
             // Apply tiered or single multiplier based on trader's order size (symmetrical with BUY logic)
-            const multiplier = getTradeMultiplier(COPY_STRATEGY_CONFIG, trade.usdcSize);
+            const multiplier = getTradeMultiplier(ENV.COPY_STRATEGY_CONFIG, trade.usdcSize);
             remaining = baseSellSize * multiplier;
 
             if (multiplier !== 1.0) {
@@ -400,7 +393,7 @@ const postOrder = async (
         let abortDueToFunds = false;
         let totalSoldTokens = 0; // Track total tokens sold
 
-        while (remaining > 0 && retry < RETRY_LIMIT) {
+        while (remaining > 0 && retry < ENV.RETRY_LIMIT) {
             const orderBook = await clobClient.getOrderBook(trade.asset);
             if (!orderBook.bids || orderBook.bids.length === 0) {
                 await UserActivity.updateOne({ _id: trade._id }, { bot: true });
@@ -465,7 +458,7 @@ const postOrder = async (
                 }
                 retry += 1;
                 Logger.warning(
-                    `Order failed (attempt ${retry}/${RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
+                    `Order failed (attempt ${retry}/${ENV.RETRY_LIMIT})${errorMessage ? ` - ${errorMessage}` : ''}`
                 );
             }
         }
@@ -507,11 +500,11 @@ const postOrder = async (
         if (abortDueToFunds) {
             await UserActivity.updateOne(
                 { _id: trade._id },
-                { bot: true, botExcutedTime: RETRY_LIMIT }
+                { bot: true, botExcutedTime: ENV.RETRY_LIMIT }
             );
             return;
         }
-        if (retry >= RETRY_LIMIT) {
+        if (retry >= ENV.RETRY_LIMIT) {
             await UserActivity.updateOne({ _id: trade._id }, { bot: true, botExcutedTime: retry });
         } else {
             await UserActivity.updateOne({ _id: trade._id }, { bot: true });

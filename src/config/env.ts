@@ -313,3 +313,29 @@ export const ENV = {
     AUTO_RESOLVE_INTERVAL: parseInt(process.env.AUTO_RESOLVE_INTERVAL || '60', 10), // Check every 60s by default
     PREVIEW_MODE: process.env.PREVIEW_MODE === 'true',
 };
+
+/**
+ * Re-read .env and mutate the user-tunable fields on the ENV object in-place.
+ * Called when the process receives SIGHUP (sent by the web UI after saving settings).
+ * Credentials and infrastructure settings (PRIVATE_KEY, MONGO_URI, etc.) are intentionally
+ * excluded — those require a full restart.
+ */
+export function reloadConfig(): void {
+    dotenv.config({ override: true, path: path.join(process.cwd(), '.env') });
+
+    // Re-parse all user-tunable settings (not credentials/infrastructure)
+    ENV.FETCH_INTERVAL = parseInt(process.env.FETCH_INTERVAL || '1', 10);
+    ENV.TOO_OLD_TIMESTAMP = parseInt(process.env.TOO_OLD_TIMESTAMP || '24', 10);
+    ENV.RETRY_LIMIT = parseInt(process.env.RETRY_LIMIT || '3', 10);
+    ENV.TRADE_MULTIPLIER = parseFloat(process.env.TRADE_MULTIPLIER || '1.0');
+    ENV.COPY_PERCENTAGE = parseFloat(process.env.COPY_PERCENTAGE || '10.0');
+    ENV.COPY_STRATEGY_CONFIG = parseCopyStrategy();
+    ENV.REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '10000', 10);
+    ENV.NETWORK_RETRY_LIMIT = parseInt(process.env.NETWORK_RETRY_LIMIT || '3', 10);
+    ENV.TRADE_AGGREGATION_ENABLED = process.env.TRADE_AGGREGATION_ENABLED === 'true';
+    ENV.TRADE_AGGREGATION_WINDOW_SECONDS = parseInt(process.env.TRADE_AGGREGATION_WINDOW_SECONDS || '300', 10);
+    ENV.AUTO_RESOLVE_ENABLED = process.env.AUTO_RESOLVE_ENABLED === 'true';
+    ENV.AUTO_RESOLVE_INTERVAL = parseInt(process.env.AUTO_RESOLVE_INTERVAL || '60', 10);
+    ENV.PREVIEW_MODE = process.env.PREVIEW_MODE === 'true';
+    ENV.USER_ADDRESSES = parseUserAddresses(process.env.USER_ADDRESSES as string);
+}

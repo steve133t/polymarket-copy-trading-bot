@@ -21,6 +21,7 @@ export function SettingsView() {
   const [traderLabels, setTraderLabels] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
@@ -109,7 +110,7 @@ export function SettingsView() {
 
       setSettings(data.settings);
       setHasChanges(false);
-      setSuccessMessage('Settings saved! Restart the bot to apply changes.');
+      setSuccessMessage(data.message || 'Settings saved.');
 
       // Clear success message after 5 seconds
       setTimeout(() => setSuccessMessage(null), 5000);
@@ -117,6 +118,24 @@ export function SettingsView() {
       setError(err instanceof Error ? err.message : 'Failed to save settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Restart bot
+  const restartBot = async () => {
+    setRestarting(true);
+    try {
+      const res = await fetch('/api/restart', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setSuccessMessage('Bot restarting... give it 5–10 seconds.');
+      } else {
+        setError(data.error || 'Restart failed');
+      }
+    } catch (err) {
+      setError('Restart request failed');
+    } finally {
+      setRestarting(false);
     }
   };
 
@@ -185,6 +204,13 @@ export function SettingsView() {
           {hasChanges && (
             <span className="text-sm text-yellow-500">Unsaved changes</span>
           )}
+          <button
+            onClick={restartBot}
+            disabled={restarting}
+            className="px-3 py-1.5 text-sm rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+          >
+            {restarting ? 'Restarting...' : 'Restart Bot'}
+          </button>
           <Button
             onClick={saveSettings}
             disabled={!hasChanges || saving}

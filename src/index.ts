@@ -1,5 +1,5 @@
 import connectDB, { closeDB } from './config/db';
-import { ENV } from './config/env';
+import { ENV, reloadConfig } from './config/env';
 import createClobClient from './utils/createClobClient';
 import tradeExecutor, { stopTradeExecutor } from './services/tradeExecutor';
 import tradeMonitor, { stopTradeMonitor } from './services/tradeMonitor';
@@ -64,6 +64,19 @@ process.on('uncaughtException', (error: Error) => {
 // Handle termination signals
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle config hot-reload (sent by web UI after saving settings)
+process.on('SIGHUP', () => {
+    Logger.info('SIGHUP received — reloading configuration...');
+    try {
+        reloadConfig();
+        Logger.success('Configuration reloaded. New settings are active immediately.');
+        Logger.info(`  Strategy: ${ENV.COPY_STRATEGY_CONFIG.strategy}, Size: ${ENV.COPY_STRATEGY_CONFIG.copySize}`);
+        Logger.info(`  Preview mode: ${ENV.PREVIEW_MODE}`);
+    } catch (err) {
+        Logger.error(`Config reload failed: ${err}`);
+    }
+});
 
 export const main = async () => {
     try {
