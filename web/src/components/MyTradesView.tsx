@@ -7,9 +7,6 @@ import { TradesCountChart } from '@/components/charts/TradesCountChart';
 import { CopyTimelineChart } from '@/components/charts/CopyTimelineChart';
 import { TradesPieChart } from '@/components/charts/TradesPieChart';
 import { MyTradesTable } from '@/components/MyTradesTable';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { StatusBar } from '@/components/StatusBar';
 
 type DatePreset = '7d' | '30d' | '90d' | 'all';
 
@@ -211,7 +208,7 @@ export function MyTradesView() {
         <div className="text-center max-w-md">
           <h2 className="text-xl font-semibold text-red-500 mb-2">Error</h2>
           <p className="text-muted-foreground mb-4">{error}</p>
-          <Button onClick={() => fetchData()}>Retry</Button>
+          <button onClick={() => fetchData()} className="px-4 py-2 rounded-md bg-card border text-sm hover:bg-muted/50 transition-colors">Retry</button>
         </div>
       </div>
     );
@@ -238,140 +235,153 @@ export function MyTradesView() {
     ? Math.round(matchedLags.reduce((a, b) => a + b, 0) / matchedLags.length)
     : null;
 
+  const lagColor = avgLagSeconds === null ? 'text-muted-foreground'
+    : avgLagSeconds <= 10 ? 'text-green-400'
+    : avgLagSeconds <= 60 ? 'text-yellow-400'
+    : 'text-red-400';
+
+  const lagLabel = avgLagSeconds === null ? '—'
+    : avgLagSeconds < 60 ? `${avgLagSeconds}s`
+    : `${Math.round(avgLagSeconds / 60)}m`;
+
+  const dateLabel = customDateFrom && customDateTo
+    ? `${customDateFrom} – ${customDateTo}`
+    : datePreset === '7d' ? 'Last 7 days'
+    : datePreset === '30d' ? 'Last 30 days'
+    : datePreset === '90d' ? 'Last 90 days'
+    : 'All time';
+
   return (
-    <>
-      {/* Status Bar */}
-      <StatusBar
-        cached={data?.cached}
-        cacheDate={data?.cacheDate}
-        lastUpdated={data?.analysisDate}
-        totalItems={data?.allMyTrades.length}
-        itemLabel="trades"
-        refreshing={refreshing}
-        onRefresh={() => { fetchData(true); setCountdown(REFRESH_INTERVAL); }}
-        countdown={countdown}
-      />
-
-      {/* Date Filter */}
-      <Card className="mb-6 p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-          <span className="text-sm font-medium">Filter by date:</span>
-          <div className="flex gap-2 flex-wrap">
-            {(['7d', '30d', '90d', 'all'] as DatePreset[]).map((preset) => (
-              <Button
-                key={preset}
-                variant={datePreset === preset && !customDateFrom ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => {
-                  setDatePreset(preset);
-                  setCustomDateFrom('');
-                  setCustomDateTo('');
-                }}
-              >
-                {preset === '7d' && '7 Days'}
-                {preset === '30d' && '30 Days'}
-                {preset === '90d' && '90 Days'}
-                {preset === 'all' && 'All Time'}
-              </Button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={customDateFrom}
-              onChange={(e) => setCustomDateFrom(e.target.value)}
-              className="bg-background border rounded px-2 py-1 text-sm"
-            />
-            <span className="text-muted-foreground">to</span>
-            <input
-              type="date"
-              value={customDateTo}
-              onChange={(e) => setCustomDateTo(e.target.value)}
-              className="bg-background border rounded px-2 py-1 text-sm"
-            />
-          </div>
+    <div className="space-y-6">
+      {/* Slim status strip */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${data?.cached ? 'bg-yellow-400' : 'bg-green-400'}`} />
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${data?.cached ? 'bg-yellow-500' : 'bg-green-500'}`} />
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {data?.cached ? 'Cached' : 'Live'} · {(data?.cacheDate || data?.analysisDate || '').split('T')[0]} · {data?.allMyTrades.length ?? 0} trades total
+          </span>
         </div>
-      </Card>
-
-      {/* P&L Hero — all-time from live positions, not date-filtered */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-        <div className="bg-card rounded-lg p-5 border md:col-span-2">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-            Total P&L <span className="normal-case">(all positions, all-time)</span>
-          </p>
-          <p className={`text-4xl font-bold ${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-            {totalPnL >= 0 ? '+' : '-'}${Math.abs(totalPnL).toFixed(2)}
-          </p>
-          <p className="text-xs text-muted-foreground mt-2">
-            Unrealized {unrealizedPnL >= 0 ? '+' : '-'}${Math.abs(unrealizedPnL).toFixed(2)}
-            &nbsp;·&nbsp;
-            Realized {realizedPnL >= 0 ? '+' : '-'}${Math.abs(realizedPnL).toFixed(2)}
-          </p>
-          <p className="text-xs text-amber-500 mt-1">
-            ⚠ Positions data is always all-time — not filtered by the date selector above
-          </p>
-        </div>
-        <div className="bg-card rounded-lg p-5 border">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Open Positions</p>
-          <p className="text-3xl font-bold">{data?.positions?.total ?? 0}</p>
-          <p className="text-xs text-muted-foreground mt-2">
-            Value ${(data?.positions?.totalValue ?? 0).toFixed(2)}
-          </p>
-        </div>
-        <div className="bg-card rounded-lg p-5 border">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">My Wallet</p>
-          <p className="text-sm font-mono mt-1" title={filteredData.myWallet}>
-            {filteredData.myWallet.slice(0, 8)}…{filteredData.myWallet.slice(-6)}
-          </p>
+        <div className="flex items-center gap-3">
+          {countdown != null && !refreshing && (
+            <span className="text-xs text-muted-foreground tabular-nums">refreshes in {countdown}s</span>
+          )}
+          <button
+            onClick={() => { fetchData(true); setCountdown(REFRESH_INTERVAL); }}
+            disabled={refreshing}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 disabled:opacity-40"
+          >
+            <svg className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
         </div>
       </div>
 
-      {/* Copy activity metrics — these ARE filtered by the date selector */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Trades Copied</p>
-          <p className="text-2xl font-bold">{filteredData.summary.totalTrades}</p>
-          <p className="text-xs text-muted-foreground mt-1">in selected period</p>
+      {/* Segmented date control */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex p-1 bg-muted/30 rounded-lg gap-0.5">
+          {(['7d', '30d', '90d', 'all'] as DatePreset[]).map((preset) => (
+            <button
+              key={preset}
+              onClick={() => { setDatePreset(preset); setCustomDateFrom(''); setCustomDateTo(''); }}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                datePreset === preset && !customDateFrom
+                  ? 'bg-card text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {preset === '7d' ? '7D' : preset === '30d' ? '30D' : preset === '90d' ? '90D' : 'All'}
+            </button>
+          ))}
         </div>
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Spent</p>
-          <p className="text-2xl font-bold">${filteredData.summary.totalBought.toFixed(2)}</p>
-          <p className="text-xs text-muted-foreground mt-1">USDC on buys</p>
-        </div>
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Match Rate</p>
-          <p className="text-2xl font-bold">{matchRate.toFixed(1)}%</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            {filteredData.summary.matchedTrades} / {filteredData.summary.totalTrades} traced to a trader
-          </p>
-        </div>
-        <div className="bg-card rounded-lg p-4 border">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Avg Copy Lag</p>
-          <p className={`text-2xl font-bold ${
-            avgLagSeconds === null ? '' :
-            avgLagSeconds <= 10 ? 'text-green-500' :
-            avgLagSeconds <= 60 ? 'text-yellow-500' : 'text-red-400'
-          }`}>
-            {avgLagSeconds === null ? '—' : avgLagSeconds < 60 ? `${avgLagSeconds}s` : `${Math.round(avgLagSeconds / 60)}m`}
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">median after trader</p>
+        <div className="flex items-center gap-2 text-sm">
+          <input
+            type="date"
+            value={customDateFrom}
+            onChange={(e) => setCustomDateFrom(e.target.value)}
+            className="bg-muted/30 border-0 rounded-md px-2 py-1.5 text-sm text-muted-foreground outline-none focus:ring-1 focus:ring-border w-36"
+          />
+          <span className="text-muted-foreground text-xs">→</span>
+          <input
+            type="date"
+            value={customDateTo}
+            onChange={(e) => setCustomDateTo(e.target.value)}
+            className="bg-muted/30 border-0 rounded-md px-2 py-1.5 text-sm text-muted-foreground outline-none focus:ring-1 focus:ring-border w-36"
+          />
         </div>
       </div>
 
-      {/* Charts Row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      {/* Total P&L hero */}
+      <div className={`rounded-xl p-6 border ${totalPnL >= 0 ? 'border-green-500/25 bg-green-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+        <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-3">Total P&L — all positions, all-time</p>
+        <p className={`text-5xl font-bold tabular-nums leading-none ${totalPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+          {totalPnL >= 0 ? '+' : '-'}${Math.abs(totalPnL).toFixed(2)}
+        </p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-4 text-sm text-muted-foreground">
+          <span>
+            Unrealized&nbsp;
+            <span className={unrealizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}>
+              {unrealizedPnL >= 0 ? '+' : '-'}${Math.abs(unrealizedPnL).toFixed(2)}
+            </span>
+          </span>
+          <span className="text-border">·</span>
+          <span>
+            Realized&nbsp;
+            <span className={realizedPnL >= 0 ? 'text-green-400' : 'text-red-400'}>
+              {realizedPnL >= 0 ? '+' : '-'}${Math.abs(realizedPnL).toFixed(2)}
+            </span>
+          </span>
+          <span className="text-border">·</span>
+          <span>{data?.positions?.total ?? 0} open positions · <span className="text-foreground">${(data?.positions?.totalValue ?? 0).toFixed(2)}</span> value</span>
+          <span className="text-border">·</span>
+          <span className="font-mono text-xs" title={filteredData.myWallet}>{filteredData.myWallet.slice(0, 10)}…{filteredData.myWallet.slice(-6)}</span>
+        </div>
+        <p className="text-[11px] text-amber-500/70 mt-3">⚠ Position data is always all-time — not affected by the date filter above</p>
+      </div>
+
+      {/* Copy activity — date filtered */}
+      <div>
+        <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-3">Copy Activity · {dateLabel}</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-lg p-4 bg-muted/20 border border-border/50">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Trades Copied</p>
+            <p className="text-3xl font-bold tabular-nums">{filteredData.summary.totalTrades}</p>
+            <p className="text-xs text-muted-foreground mt-1">{filteredData.summary.matchedTrades} matched · {filteredData.summary.unmatchedTrades} unmatched</p>
+          </div>
+          <div className="rounded-lg p-4 bg-muted/20 border border-border/50">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Total Spent</p>
+            <p className="text-3xl font-bold tabular-nums">${filteredData.summary.totalBought.toFixed(0)}</p>
+            <p className="text-xs text-muted-foreground mt-1">USDC on buys</p>
+          </div>
+          <div className="rounded-lg p-4 bg-muted/20 border border-border/50">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Match Rate</p>
+            <p className="text-3xl font-bold tabular-nums">{matchRate.toFixed(0)}%</p>
+            <p className="text-xs text-muted-foreground mt-1">{filteredData.summary.matchedTrades} of {filteredData.summary.totalTrades} traced</p>
+          </div>
+          <div className="rounded-lg p-4 bg-muted/20 border border-border/50">
+            <p className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2">Avg Copy Lag</p>
+            <p className={`text-3xl font-bold tabular-nums ${lagColor}`}>{lagLabel}</p>
+            <p className="text-xs text-muted-foreground mt-1">avg seconds after trader</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <CopyPnLBarChart byTrader={filteredData.byTrader} />
         <TradesPieChart byTrader={filteredData.byTrader} />
       </div>
-
-      {/* Charts Row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <TradesCountChart byTrader={filteredData.byTrader} />
         <CopyTimelineChart trades={filteredData.allMyTrades} />
       </div>
 
       {/* Table */}
       <MyTradesTable byTrader={filteredData.byTrader} />
-    </>
+    </div>
   );
 }
