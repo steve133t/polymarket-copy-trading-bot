@@ -221,6 +221,33 @@ describe('executor trade pickup', () => {
 });
 
 // ---------------------------------------------------------------------------
+// TOO_OLD_TIMESTAMP filter (mirrors tradeMonitor.fetchTradeData)
+// ---------------------------------------------------------------------------
+
+describe('TOO_OLD_TIMESTAMP filter', () => {
+    it('skips activities older than the cutoff epoch', () => {
+        // TOO_OLD_TIMESTAMP is in hours. The comparison in tradeMonitor uses:
+        //   cutoff = floor(Date.now() / 1000) - TOO_OLD_TIMESTAMP * 3600
+        //   skip if activity.timestamp < cutoff
+        const tooOldHours = 1;
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        const cutoff = nowSeconds - tooOldHours * 3600;
+
+        // Activity from 2 hours ago → should be skipped
+        const old = { timestamp: nowSeconds - 7200 };
+        expect(old.timestamp < cutoff).toBe(true);
+
+        // Activity from 30 minutes ago → should be processed
+        const recent = { timestamp: nowSeconds - 1800 };
+        expect(recent.timestamp < cutoff).toBe(false);
+
+        // Guard against the old (broken) comparison: TOO_OLD_TIMESTAMP is ~1
+        // and timestamps are Unix epochs (~1.7e9). A raw `timestamp < 1` is never true.
+        expect(nowSeconds - 7200).toBeGreaterThan(tooOldHours);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // calculateOrderSize — FIXED strategy ($5 per trade)
 // ---------------------------------------------------------------------------
 

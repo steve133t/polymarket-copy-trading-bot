@@ -34,38 +34,36 @@ const EIP1967_IMPLEMENTATION_SLOT =
  * with signer = maker = proxy wallet address. Using POLY_PROXY (1) causes
  * "maker address not allowed" errors from the CLOB backend.
  */
-const detectSignatureType = async (address: string): Promise<SignatureTypeV2> => {
-    try {
-        const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-        const code = await provider.getCode(address);
+export const detectSignatureType = async (
+    address: string,
+    rpcUrl: string = RPC_URL
+): Promise<SignatureTypeV2> => {
+    const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+    const code = await provider.getCode(address);
 
-        if (code === '0x') {
-            return SignatureTypeV2.EOA;
-        }
-
-        // Gnosis Safe stores the masterCopy address in slot 0 (non-zero for a Safe).
-        const slot0 = await provider.getStorageAt(address, GNOSIS_SAFE_MASTER_COPY_SLOT);
-        const masterCopy = '0x' + slot0.slice(-40); // last 20 bytes
-        const isGnosisSafe = masterCopy !== '0x' + '0'.repeat(40);
-
-        if (isGnosisSafe) {
-            return SignatureTypeV2.POLY_GNOSIS_SAFE;
-        }
-
-        // Polymarket V2 proxy wallets use EIP-1967 UUPS: their implementation address
-        // is stored in the standard EIP-1967 slot (non-zero). These wallets implement
-        // EIP-1271 and must use signatureType POLY_1271 (3).
-        // Polymarket V1 proxy wallets use the minimal-proxy pattern and have no
-        // EIP-1967 slot, so they fall through to POLY_PROXY (1).
-        const implSlot = await provider.getStorageAt(address, EIP1967_IMPLEMENTATION_SLOT);
-        const implAddress = '0x' + implSlot.slice(-40);
-        const hasEip1967Impl = implAddress !== '0x' + '0'.repeat(40);
-
-        return hasEip1967Impl ? SignatureTypeV2.POLY_1271 : SignatureTypeV2.POLY_PROXY;
-    } catch (error) {
-        Logger.error(`Error detecting wallet type: ${error}`);
+    if (code === '0x') {
         return SignatureTypeV2.EOA;
     }
+
+    // Gnosis Safe stores the masterCopy address in slot 0 (non-zero for a Safe).
+    const slot0 = await provider.getStorageAt(address, GNOSIS_SAFE_MASTER_COPY_SLOT);
+    const masterCopy = '0x' + slot0.slice(-40); // last 20 bytes
+    const isGnosisSafe = masterCopy !== '0x' + '0'.repeat(40);
+
+    if (isGnosisSafe) {
+        return SignatureTypeV2.POLY_GNOSIS_SAFE;
+    }
+
+    // Polymarket V2 proxy wallets use EIP-1967 UUPS: their implementation address
+    // is stored in the standard EIP-1967 slot (non-zero). These wallets implement
+    // EIP-1271 and must use signatureType POLY_1271 (3).
+    // Polymarket V1 proxy wallets use the minimal-proxy pattern and have no
+    // EIP-1967 slot, so they fall through to POLY_PROXY (1).
+    const implSlot = await provider.getStorageAt(address, EIP1967_IMPLEMENTATION_SLOT);
+    const implAddress = '0x' + implSlot.slice(-40);
+    const hasEip1967Impl = implAddress !== '0x' + '0'.repeat(40);
+
+    return hasEip1967Impl ? SignatureTypeV2.POLY_1271 : SignatureTypeV2.POLY_PROXY;
 };
 
 const createClobClient = async (): Promise<ClobClient> => {
@@ -79,7 +77,19 @@ const createClobClient = async (): Promise<ClobClient> => {
         transport: http(RPC_URL),
     });
 
-    const signatureType = await detectSignatureType(PROXY_WALLET);
+    let signatureType: SignatureTypeV2;
+    try {
+        signatureType = await detectSignatureType(PROXY_WALLET);
+    } catch (error) {
+        // RPC failure — throw rather than silently falling back to EOA.
+        // A silent EOA fallback would produce "Invalid L1 Request headers"
+        // for proxy wallets, which is far harder to diagnose than a clear
+        // startup error pointing at the RPC connection.
+        throw new Error(
+            `Failed to detect wallet type for ${PROXY_WALLET} — ` +
+                `check RPC_URL is reachable. Underlying error: ${error}`
+        );
+    }
     const isContract = signatureType !== SignatureTypeV2.EOA;
 
     const typeLabel: Record<SignatureTypeV2, string> = {

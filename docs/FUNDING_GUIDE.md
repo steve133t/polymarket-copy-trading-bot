@@ -200,7 +200,7 @@ For smooth operation of the bot:
 | **pUSD** | $100         | $500-1000     | Trading capital |
 | **POL**  | 10 POL (~$5) | 50 POL (~$25) | Gas fees        |
 
-**Note:** With `TRADE_MULTIPLIER = 2.0`, your effective buying power is 2x your balance!
+**Tip:** Use `COPY_STRATEGY = FIXED` with a small `COPY_SIZE` (e.g. $5–$10) to control spending precisely. See the `TIERED_MULTIPLIERS` setting in `.env.example` if you need to scale up for large-volume traders.
 
 ---
 

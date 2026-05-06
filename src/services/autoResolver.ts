@@ -15,7 +15,7 @@ const AUTO_RESOLVE_INTERVAL = ENV.AUTO_RESOLVE_INTERVAL;
 
 // Contract addresses on Polygon
 const CTF_CONTRACT_ADDRESS = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
-const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174';
+const USDC_ADDRESS = ENV.USDC_CONTRACT_ADDRESS; // pUSD collateral token (Polymarket v2)
 
 // CTF Contract ABI (only the functions we need)
 const CTF_ABI = [

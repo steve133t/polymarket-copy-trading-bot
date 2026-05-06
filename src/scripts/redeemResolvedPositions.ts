@@ -8,7 +8,7 @@ const RPC_URL = ENV.RPC_URL || 'https://polygon-rpc.com';
 
 // Contract addresses on Polygon
 const CTF_CONTRACT_ADDRESS = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
-const USDC_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'; // USDC on Polygon
+const USDC_ADDRESS = ENV.USDC_CONTRACT_ADDRESS; // pUSD collateral token (Polymarket v2)
 
 // Thresholds for considering a position "resolved"
 const RESOLVED_HIGH = 0.99; // Position won (price ~$1)

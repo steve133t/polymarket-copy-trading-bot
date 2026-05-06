@@ -34,9 +34,9 @@ jest.mock('../../utils/logger', () => ({
 }));
 
 import axios from 'axios';
-import { OrderType, Side } from '@polymarket/clob-client-v2';
+import { OrderType, Side, SignatureTypeV2 } from '@polymarket/clob-client-v2';
 import type { ClobClient } from '@polymarket/clob-client-v2';
-import createClobClient from '../../utils/createClobClient';
+import createClobClient, { detectSignatureType } from '../../utils/createClobClient';
 import { ENV } from '../../config/env';
 import { calculateOrderSize, CopyStrategy } from '../../config/copyStrategy';
 import type { CopyStrategyConfig } from '../../config/copyStrategy';
@@ -183,6 +183,13 @@ describe('clob.polymarket.com — auth and order book', () => {
     it('authenticates: createClobClient resolves without error', () => {
         expect(clobClient).toBeDefined();
     });
+
+    it('proxy wallet is detected as POLY_1271 (signatureType=3) on the real RPC', async () => {
+        // Polymarket V2 proxy wallets use EIP-1967 UUPS and require POLY_1271.
+        // If this fails, all orders will be rejected with "maker address not allowed".
+        const sigType = await detectSignatureType(ENV.PROXY_WALLET as string, ENV.RPC_URL as string);
+        expect(sigType).toBe(SignatureTypeV2.POLY_1271);
+    }, 15000);
 
     it('fetches an order book for a recently traded token', async () => {
         if (!activeTokenId) {
