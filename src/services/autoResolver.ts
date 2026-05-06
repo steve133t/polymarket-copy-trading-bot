@@ -287,16 +287,16 @@ const checkAndResolvePositions = async (clobClient: ClobClient): Promise<void> =
         return;
     }
 
-    // Filter for resolved positions (price >= 99% or <= 1%)
-    const resolvedPositions = allPositions.filter(
-        (pos) => pos.curPrice >= RESOLVED_HIGH || pos.curPrice <= RESOLVED_LOW
-    );
+    // Safe mode: only act on positions Polymarket has officially marked redeemable.
+    // This prevents false triggers on live markets trading near $0.99/$0.01 and
+    // avoids breaking hedge positions before the market actually resolves.
+    const resolvedPositions = allPositions.filter((pos) => pos.redeemable === true);
 
     if (resolvedPositions.length === 0) {
         return;
     }
 
-    Logger.header(`🔄 AUTO-RESOLVE: Found ${resolvedPositions.length} resolved position(s)`);
+    Logger.header(`🔄 AUTO-RESOLVE: Found ${resolvedPositions.length} redeemable position(s)`);
 
     let totalSold = 0;
     let totalRedeemed = 0;
