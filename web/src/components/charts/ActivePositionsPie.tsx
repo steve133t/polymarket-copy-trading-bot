@@ -25,7 +25,8 @@ export function ActivePositionsPie({ traders }: ActivePositionsPieProps) {
 
   return (
     <div className="bg-card rounded-xl border p-4 flex flex-col items-center justify-center h-full">
-      <span className="text-sm text-muted-foreground mb-2">Positions</span>
+      <span className="text-sm font-medium mb-0.5">Trader Positions</span>
+      <span className="text-xs text-muted-foreground mb-2">Tracked traders' open markets</span>
       <div className="flex items-center gap-4">
         {/* Mini pie */}
         <div className="relative" style={{ width: 70, height: 70 }}>
