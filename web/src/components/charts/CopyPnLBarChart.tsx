@@ -68,7 +68,8 @@ export function CopyPnLBarChart({ byTrader }: CopyPnLBarChartProps) {
                 return label;
               }}
             />
-            <Bar dataKey="pnl" name="P&L ($)" radius={[4, 4, 0, 0]}>
+            <Bar
+                  isAnimationActive={false} dataKey="pnl" name="P&L ($)" radius={[4, 4, 0, 0]}>
               {data.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}

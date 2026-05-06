@@ -76,7 +76,8 @@ export function TradesCountChart({ byTrader }: TradesCountChartProps) {
                 return label;
               }}
             />
-            <Bar dataKey="trades" name="Trades" radius={[4, 4, 0, 0]}>
+            <Bar
+                  isAnimationActive={false} dataKey="trades" name="Trades" radius={[4, 4, 0, 0]}>
               {data.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}

@@ -99,6 +99,7 @@ export function CopyTimelineChart({ trades }: CopyTimelineChartProps) {
             />
             <Legend />
             <Line
+                  isAnimationActive={false}
               type="monotone"
               dataKey="cumPnL"
               name="Cumulative P&L"
@@ -108,6 +109,7 @@ export function CopyTimelineChart({ trades }: CopyTimelineChartProps) {
               activeDot={{ r: 5 }}
             />
             <Line
+                  isAnimationActive={false}
               type="monotone"
               dataKey="dailyPnL"
               name="Daily P&L"

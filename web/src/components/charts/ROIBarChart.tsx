@@ -96,7 +96,8 @@ export function ROIBarChart({ traders, compact = false, timeRange = 'all' }: ROI
                 return label;
               }}
             />
-            <Bar dataKey="roi" name="ROI (%)" radius={[4, 4, 0, 0]}>
+            <Bar
+                  isAnimationActive={false} dataKey="roi" name="ROI (%)" radius={[4, 4, 0, 0]}>
               {data.map((entry, index) => (
                 <Cell
                   key={`cell-${index}`}

@@ -115,6 +115,7 @@ export function MonthlyLineChart({ traders, compact = false, timeRange = 'all' }
             {!compact && <Legend />}
             {traderLabels.map((label, index) => (
               <Line
+                  isAnimationActive={false}
                 key={label}
                 type="monotone"
                 dataKey={label}
