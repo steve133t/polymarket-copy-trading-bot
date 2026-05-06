@@ -9,11 +9,10 @@ interface WinRateGaugeProps {
 }
 
 export function WinRateGauge({ traders, timeRange = 'all' }: WinRateGaugeProps) {
-  // Win rate is based on positions, not time-filtered (positions don't have dates)
-  // So we show overall win rate regardless of time range
+  const tracked = traders.filter(t => !t.label.includes('My Wallet') && !t.label.includes('МОЙ'));
   const avgWinRate =
-    traders.length > 0
-      ? traders.reduce((sum, t) => sum + t.positions.winRate, 0) / traders.length
+    tracked.length > 0
+      ? tracked.reduce((sum, t) => sum + t.positions.winRate, 0) / tracked.length
       : 0;
 
   // SVG gauge parameters

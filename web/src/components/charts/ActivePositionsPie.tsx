@@ -10,8 +10,9 @@ interface ActivePositionsPieProps {
 }
 
 export function ActivePositionsPie({ traders }: ActivePositionsPieProps) {
-  const totalWins = traders.reduce((sum, t) => sum + t.positions.winners, 0);
-  const totalLosses = traders.reduce((sum, t) => sum + t.positions.losers, 0);
+  const tracked = traders.filter(t => !t.label.includes('My Wallet') && !t.label.includes('МОЙ'));
+  const totalWins = tracked.reduce((sum, t) => sum + t.positions.winners, 0);
+  const totalLosses = tracked.reduce((sum, t) => sum + t.positions.losers, 0);
 
   // For the pie, show wins vs losses ratio
   const data = [

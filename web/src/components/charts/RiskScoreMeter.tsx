@@ -11,13 +11,14 @@ interface RiskScoreMeterProps {
 export function RiskScoreMeter({ traders }: RiskScoreMeterProps) {
   // Calculate risk score based on multiple factors
   const calculateRiskScore = () => {
-    if (traders.length === 0) return 50;
+    const tracked = traders.filter(t => !t.label.includes('My Wallet') && !t.label.includes('МОЙ'));
+    if (tracked.length === 0) return 50;
 
     let riskFactors = 0;
     let maxFactors = 0;
 
     // Factor 1: Average ROI volatility (higher = more risk)
-    const rois = traders.map((t) => t.pnl.roi);
+    const rois = tracked.map((t) => t.pnl.roi);
     const avgRoi = rois.reduce((a, b) => a + b, 0) / rois.length;
     const roiVariance = rois.reduce((sum, r) => sum + Math.pow(r - avgRoi, 2), 0) / rois.length;
     const roiStdDev = Math.sqrt(roiVariance);
@@ -25,17 +26,17 @@ export function RiskScoreMeter({ traders }: RiskScoreMeterProps) {
     maxFactors += 30;
 
     // Factor 2: Percentage of losing traders
-    const losingPct = traders.filter((t) => t.pnl.total < 0).length / traders.length;
+    const losingPct = tracked.filter((t) => t.pnl.total < 0).length / tracked.length;
     riskFactors += losingPct * 30; // Max 30 points
     maxFactors += 30;
 
     // Factor 3: Average win rate (lower = more risk)
-    const avgWinRate = traders.reduce((sum, t) => sum + t.positions.winRate, 0) / traders.length;
+    const avgWinRate = tracked.reduce((sum, t) => sum + t.positions.winRate, 0) / tracked.length;
     riskFactors += (1 - avgWinRate / 100) * 20; // Max 20 points
     maxFactors += 20;
 
     // Factor 4: Concentration (if few traders, higher risk)
-    const concentrationRisk = Math.max(0, (5 - traders.length) / 5) * 20;
+    const concentrationRisk = Math.max(0, (5 - tracked.length) / 5) * 20;
     riskFactors += concentrationRisk;
     maxFactors += 20;
 
