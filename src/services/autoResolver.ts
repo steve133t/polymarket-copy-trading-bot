@@ -261,6 +261,11 @@ export const resolvePosition = async (
 
     // If orderbook not available and position is redeemable, try on-chain redeem
     if (!sellResult.orderbookAvailable && position.redeemable) {
+        if (!isWin) {
+            Logger.info(`   ⏭️  Loss position worth $0 — skipping on-chain redemption (no return, saves gas)`);
+            return { method: 'failed', tokens: 0, proceeds: 0 };
+        }
+
         Logger.info(`   📦 Orderbook closed, trying on-chain redeem...`);
 
         const redeemResult = await redeemPosition(position);
