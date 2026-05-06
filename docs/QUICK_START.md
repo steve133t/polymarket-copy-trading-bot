@@ -9,10 +9,10 @@ Before starting, ensure you have:
 - ✅ **Node.js v18+** - [Download here](https://nodejs.org/)
 - ✅ **MongoDB Database** - [Free tier on MongoDB Atlas](https://www.mongodb.com/cloud/atlas/register)
 - ✅ **Polygon Wallet** - MetaMask or any Web3 wallet
-- ✅ **USDC on Polygon** - For executing trades
-- ✅ **MATIC** - Small amount for gas fees (~$5-10 worth)
+- ✅ **pUSD (deposit via polymarket.com)** - For executing trades — deposit USDC on polymarket.com and it converts automatically
+- ✅ **POL** - Small amount for gas fees (~$5-10 worth)
 
-**Don't have USDC?** Bridge from Ethereum using [Polygon Bridge](https://wallet.polygon.technology/polygon/bridge/deposit) or buy directly on an exchange that supports Polygon withdrawals.
+**Don't have pUSD?** Log into [polymarket.com](https://polymarket.com), go to your profile, and deposit USDC. Polymarket converts it to pUSD automatically — no bridging or swapping required.
 
 ---
 
@@ -52,10 +52,10 @@ MONGO_URI = 'mongodb+srv://username:password@cluster.mongodb.net/database'
 # Polygon RPC (get free key at infura.io or alchemy.com)
 RPC_URL = 'https://polygon-mainnet.infura.io/v3/YOUR_PROJECT_ID'
 
-# Don't change these
 CLOB_HTTP_URL = 'https://clob.polymarket.com/'
 CLOB_WS_URL = 'wss://ws-subscriptions-clob.polymarket.com/ws'
-USDC_CONTRACT_ADDRESS = '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174'
+# pUSD collateral token address (Polymarket v2) — update if switching versions
+USDC_CONTRACT_ADDRESS = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB'
 ```
 
 ### Step 3: Build and Run
@@ -83,7 +83,7 @@ When the bot starts successfully, you should see:
    1. 0x7c3db723f1d4d8cb9c550095203b686cb11e5c6b
 
 💼 Your Wallet:
-   0x4fbBe5599c06e846D2742014c9eB04A8a3d1DE8C
+   <YOUR_PROXY_WALLET>
 
 ✓ MongoDB connected
 ℹ Initializing CLOB client...
@@ -260,10 +260,16 @@ Balances:
 
 ### Trades Failing
 
+**"maker address not allowed, please use the deposit wallet flow"**
+
+- This is a v2 wallet registration error.
+- Your proxy wallet must be registered through Polymarket's deposit flow before the CLOB accepts orders.
+- Fix: log into [polymarket.com](https://polymarket.com) and complete at least one deposit. This registers the wallet automatically. It only needs to be done once per wallet.
+
 **"Insufficient balance"**
 
-- Ensure `PROXY_WALLET` has USDC
-- Verify you have MATIC for gas
+- Ensure `PROXY_WALLET` has pUSD (deposit USDC via polymarket.com)
+- Verify you have POL for gas
 
 **"Price slippage too high"**
 
