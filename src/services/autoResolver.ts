@@ -10,9 +10,7 @@ const PRIVATE_KEY = ENV.PRIVATE_KEY;
 const RPC_URL = ENV.RPC_URL;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 
-// Auto-resolver configuration from ENV
-const AUTO_RESOLVE_ENABLED = ENV.AUTO_RESOLVE_ENABLED;
-const AUTO_RESOLVE_INTERVAL = ENV.AUTO_RESOLVE_INTERVAL;
+// Auto-resolver configuration — read from ENV each tick so hot-reload works
 
 // Contract addresses on Polygon
 const CTF_CONTRACT_ADDRESS = '0x4D97DCd97eC945f40cF65F87097ACe5EA0476045';
@@ -356,24 +354,27 @@ const checkAndResolvePositions = async (clobClient: ClobClient): Promise<void> =
 };
 
 const autoResolver = async (clobClient: ClobClient) => {
-    if (!AUTO_RESOLVE_ENABLED) {
-        Logger.info('Auto resolver is disabled');
-        return;
+    // Always start the loop so toggling via settings hot-reload takes effect
+    // without needing a bot restart.
+    if (ENV.AUTO_RESOLVE_ENABLED) {
+        Logger.success(`Auto resolver started (checking every ${ENV.AUTO_RESOLVE_INTERVAL}s)`);
+        Logger.info(`   Thresholds: WIN >= $${RESOLVED_HIGH}, LOSS <= $${RESOLVED_LOW}`);
+        Logger.info(`   Fallback: On-chain redeem if orderbook closed`);
+    } else {
+        Logger.info('Auto resolver in standby (disabled — enable via Settings to activate without restart)');
     }
 
-    Logger.success(`Auto resolver started (checking every ${AUTO_RESOLVE_INTERVAL}s)`);
-    Logger.info(`   Thresholds: WIN >= $${RESOLVED_HIGH}, LOSS <= $${RESOLVED_LOW}`);
-    Logger.info(`   Fallback: On-chain redeem if orderbook closed`);
-
     while (isRunning) {
-        try {
-            await checkAndResolvePositions(clobClient);
-        } catch (error) {
-            Logger.error(`Auto resolver error: ${error}`);
+        if (ENV.AUTO_RESOLVE_ENABLED) {
+            try {
+                await checkAndResolvePositions(clobClient);
+            } catch (error) {
+                Logger.error(`Auto resolver error: ${error}`);
+            }
         }
 
         if (!isRunning) break;
-        await new Promise((resolve) => setTimeout(resolve, AUTO_RESOLVE_INTERVAL * 1000));
+        await new Promise((resolve) => setTimeout(resolve, ENV.AUTO_RESOLVE_INTERVAL * 1000));
     }
 
     Logger.info('Auto resolver stopped');

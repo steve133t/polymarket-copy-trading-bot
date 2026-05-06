@@ -147,6 +147,45 @@ export function BotSettingsSection({
         </CardContent>
       </Card>
 
+      {/* Auto-Redeem Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-3">
+            Auto-Redeem
+            {botSettings.autoResolveEnabled ? (
+              <Badge variant="success">Enabled</Badge>
+            ) : (
+              <Badge variant="secondary">Disabled</Badge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            Automatically redeem winnings when markets resolve — sells via orderbook first,
+            falls back to on-chain redemption if the market is closed
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Switch
+            checked={botSettings.autoResolveEnabled}
+            onCheckedChange={(checked) => onBotSettingsChange({ autoResolveEnabled: checked })}
+            label="Auto-Redeem Winnings"
+            description="Detect resolved positions (price ≥ $0.99 or ≤ $0.01) and collect automatically"
+          />
+
+          {botSettings.autoResolveEnabled && (
+            <Input
+              label="Check Interval (seconds)"
+              type="number"
+              min={30}
+              step={30}
+              value={botSettings.autoResolveInterval}
+              onChange={(e) => onBotSettingsChange({
+                autoResolveInterval: parseInt(e.target.value) || 60
+              })}
+            />
+          )}
+        </CardContent>
+      </Card>
+
       {/* Network Settings */}
       <Card>
         <CardHeader>
