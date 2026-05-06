@@ -1,14 +1,9 @@
-import { ethers } from 'ethers';
-import { AssetType, ClobClient, OrderType, Side } from '@polymarket/clob-client';
-import { SignatureType } from '@polymarket/order-utils';
+import { AssetType, ClobClient, OrderType, Side } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 import fetchData from '../utils/fetchData';
+import createClobClient from '../utils/createClobClient';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
-const PRIVATE_KEY = ENV.PRIVATE_KEY;
-const CLOB_HTTP_URL = ENV.CLOB_HTTP_URL;
-const RPC_URL = ENV.RPC_URL;
-const POLYGON_CHAIN_ID = 137;
 const RETRY_LIMIT = ENV.RETRY_LIMIT;
 
 // ABI для получения информации о рынке
@@ -24,62 +19,6 @@ interface Position {
     title: string;
     outcome: string;
 }
-
-const isGnosisSafe = async (
-    address: string,
-    provider: ethers.providers.JsonRpcProvider
-): Promise<boolean> => {
-    try {
-        const code = await provider.getCode(address);
-        return code !== '0x';
-    } catch (error) {
-        console.error(`Error checking wallet type: ${error}`);
-        return false;
-    }
-};
-
-const createClobClient = async (
-    provider: ethers.providers.JsonRpcProvider
-): Promise<ClobClient> => {
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    const isProxySafe = await isGnosisSafe(PROXY_WALLET, provider);
-    const signatureType = isProxySafe ? SignatureType.POLY_GNOSIS_SAFE : SignatureType.EOA;
-
-    console.log(`Wallet type: ${isProxySafe ? 'Gnosis Safe' : 'EOA'}`);
-
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    console.log = function () {};
-    console.error = function () {};
-
-    let clobClient = new ClobClient(
-        CLOB_HTTP_URL,
-        POLYGON_CHAIN_ID,
-        wallet,
-        undefined,
-        signatureType,
-        isProxySafe ? PROXY_WALLET : undefined
-    );
-
-    let creds = await clobClient.createApiKey();
-    if (!creds.key) {
-        creds = await clobClient.deriveApiKey();
-    }
-
-    clobClient = new ClobClient(
-        CLOB_HTTP_URL,
-        POLYGON_CHAIN_ID,
-        wallet,
-        creds,
-        signatureType,
-        isProxySafe ? PROXY_WALLET : undefined
-    );
-
-    console.log = originalConsoleLog;
-    console.error = originalConsoleError;
-
-    return clobClient;
-};
 
 const fetchPositions = async (): Promise<Position[]> => {
     const url = `https://data-api.polymarket.com/positions?user=${PROXY_WALLET}`;
@@ -246,9 +185,8 @@ async function main() {
     console.log(`📊 Sell percentage: ${(SELL_PERCENTAGE * 100).toFixed(0)}%\n`);
 
     try {
-        // Создаем провайдера и клиента
-        const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-        const clobClient = await createClobClient(provider);
+        // Connect to Polymarket CLOB
+        const clobClient = await createClobClient();
 
         console.log('✅ Connected to Polymarket\n');
 

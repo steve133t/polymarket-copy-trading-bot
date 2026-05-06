@@ -1,23 +1,24 @@
 import { ethers } from 'ethers';
-import { ClobClient } from '@polymarket/clob-client';
-import { SignatureType } from '@polymarket/order-utils';
+import { createWalletClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { polygon } from 'viem/chains';
+import { ClobClient, Chain, SignatureTypeV2 } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 import Logger from './logger';
 
-const PROXY_WALLET = ENV.PROXY_WALLET;
-const PRIVATE_KEY = ENV.PRIVATE_KEY;
-const CLOB_HTTP_URL = ENV.CLOB_HTTP_URL;
-const RPC_URL = ENV.RPC_URL;
+const PROXY_WALLET = ENV.PROXY_WALLET as string;
+const PRIVATE_KEY = ENV.PRIVATE_KEY as string;
+const CLOB_HTTP_URL = ENV.CLOB_HTTP_URL as string;
+const RPC_URL = ENV.RPC_URL as string;
 
 /**
- * Determines if a wallet is a Gnosis Safe by checking if it has contract code
+ * Determines if a wallet is a Gnosis Safe by checking if it has contract code.
+ * If PROXY_WALLET is a deployed contract it is treated as POLY_GNOSIS_SAFE (type 2).
  */
 const isGnosisSafe = async (address: string): Promise<boolean> => {
     try {
-        // Using ethers v5 syntax
         const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
         const code = await provider.getCode(address);
-        // If code is not "0x", then it's a contract (likely Gnosis Safe)
         return code !== '0x';
     } catch (error) {
         Logger.error(`Error checking wallet type: ${error}`);
@@ -26,52 +27,56 @@ const isGnosisSafe = async (address: string): Promise<boolean> => {
 };
 
 const createClobClient = async (): Promise<ClobClient> => {
-    const chainId = 137;
-    const host = CLOB_HTTP_URL as string;
-    const wallet = new ethers.Wallet(PRIVATE_KEY as string);
+    // Ensure private key has 0x prefix (required by viem)
+    const privateKey = (PRIVATE_KEY.startsWith('0x') ? PRIVATE_KEY : `0x${PRIVATE_KEY}`) as `0x${string}`;
 
-    // Detect if the proxy wallet is a Gnosis Safe or EOA
-    const isProxySafe = await isGnosisSafe(PROXY_WALLET as string);
-    const signatureType = isProxySafe ? SignatureType.POLY_GNOSIS_SAFE : SignatureType.EOA;
+    const account = privateKeyToAccount(privateKey);
+    const walletClient = createWalletClient({
+        account,
+        chain: polygon,
+        transport: http(RPC_URL),
+    });
+
+    // Detect if the proxy wallet is a Gnosis Safe or plain EOA
+    const isProxySafe = await isGnosisSafe(PROXY_WALLET);
+    const signatureType = isProxySafe
+        ? SignatureTypeV2.POLY_GNOSIS_SAFE
+        : SignatureTypeV2.EOA;
 
     Logger.info(
-        `Wallet type detected: ${isProxySafe ? 'Gnosis Safe' : 'EOA (Externally Owned Account)'}`
+        `Wallet type detected: ${isProxySafe ? 'Gnosis Safe (POLY_GNOSIS_SAFE)' : 'EOA'}`
     );
 
-    let clobClient = new ClobClient(
-        host,
-        chainId,
-        wallet,
-        undefined,
+    // Build the unauthenticated client used only to obtain API credentials
+    const unauthClient = new ClobClient({
+        host: CLOB_HTTP_URL,
+        chain: Chain.POLYGON,
+        signer: walletClient,
         signatureType,
-        isProxySafe ? (PROXY_WALLET as string) : undefined
-    );
+        funderAddress: isProxySafe ? PROXY_WALLET : undefined,
+    });
 
-    // Suppress console output during API key creation
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    console.log = function () {};
-    console.error = function () {};
-
-    let creds = await clobClient.createApiKey();
-    if (!creds.key) {
-        creds = await clobClient.deriveApiKey();
+    // createOrDeriveApiKey tries createApiKey first, falls back to deriveApiKey
+    const originalLog = console.log;
+    const originalErr = console.error;
+    console.log = () => {};
+    console.error = () => {};
+    let creds;
+    try {
+        creds = await unauthClient.createOrDeriveApiKey();
+    } finally {
+        console.log = originalLog;
+        console.error = originalErr;
     }
 
-    clobClient = new ClobClient(
-        host,
-        chainId,
-        wallet,
+    return new ClobClient({
+        host: CLOB_HTTP_URL,
+        chain: Chain.POLYGON,
+        signer: walletClient,
         creds,
         signatureType,
-        isProxySafe ? (PROXY_WALLET as string) : undefined
-    );
-
-    // Restore console functions
-    console.log = originalConsoleLog;
-    console.error = originalConsoleError;
-
-    return clobClient;
+        funderAddress: isProxySafe ? PROXY_WALLET : undefined,
+    });
 };
 
 export default createClobClient;

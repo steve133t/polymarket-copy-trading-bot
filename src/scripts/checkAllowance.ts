@@ -1,17 +1,17 @@
 import { ethers } from 'ethers';
-import { AssetType, ClobClient, getContractConfig } from '@polymarket/clob-client';
-import { SignatureType } from '@polymarket/order-utils';
+import { AssetType, ClobClient } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
+import createClobClientUtil from '../utils/createClobClient';
 
 const PROXY_WALLET = ENV.PROXY_WALLET;
 const PRIVATE_KEY = ENV.PRIVATE_KEY;
 const RPC_URL = ENV.RPC_URL;
 const USDC_CONTRACT_ADDRESS = ENV.USDC_CONTRACT_ADDRESS;
-const CLOB_HTTP_URL = ENV.CLOB_HTTP_URL;
-const POLYGON_CHAIN_ID = 137;
-const POLYMARKET_EXCHANGE = '0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E';
+// V2 contract addresses
+const POLYMARKET_EXCHANGE = '0xE111180000d2663C0091e4f400237545B87B996B';
 const POLYMARKET_EXCHANGE_LOWER = POLYMARKET_EXCHANGE.toLowerCase();
-const POLYMARKET_COLLATERAL = getContractConfig(POLYGON_CHAIN_ID).collateral;
+// pUSD is the V2 collateral token (replaces USDC.e)
+const POLYMARKET_COLLATERAL = '0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB';
 const POLYMARKET_COLLATERAL_LOWER = POLYMARKET_COLLATERAL.toLowerCase();
 const NATIVE_USDC_ADDRESS = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
 const NATIVE_USDC_LOWER = NATIVE_USDC_ADDRESS.toLowerCase();
@@ -24,68 +24,8 @@ const USDC_ABI = [
     'function decimals() view returns (uint8)',
 ];
 
-const buildClobClient = async (provider: ethers.providers.JsonRpcProvider): Promise<ClobClient> => {
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    const code = await provider.getCode(PROXY_WALLET);
-    const isProxySafe = code !== '0x';
-    const signatureType = isProxySafe ? SignatureType.POLY_GNOSIS_SAFE : SignatureType.EOA;
-    const originalConsoleLog = console.log;
-    const originalConsoleError = console.error;
-    console.log = function () {};
-    console.error = function () {};
-
-    const initialClient = new ClobClient(
-        CLOB_HTTP_URL,
-        POLYGON_CHAIN_ID,
-        wallet,
-        undefined,
-        signatureType,
-        isProxySafe ? PROXY_WALLET : undefined
-    );
-
-    let creds;
-    let createWarning: string | undefined;
-    let deriveWarning: string | undefined;
-    try {
-        try {
-            creds = await initialClient.createApiKey();
-        } catch (createError: any) {
-            const msg = createError?.response?.data?.error || createError?.message;
-            createWarning = `⚠️  Unable to create new API key${msg ? `: ${msg}` : ''}`;
-        }
-
-        if (!creds?.key) {
-            try {
-                creds = await initialClient.deriveApiKey();
-            } catch (deriveError: any) {
-                const msg = deriveError?.response?.data?.error || deriveError?.message;
-                deriveWarning = `⚠️  Unable to derive API key${msg ? `: ${msg}` : ''}`;
-            }
-        }
-    } finally {
-        console.log = originalConsoleLog;
-        console.error = originalConsoleError;
-    }
-
-    if (createWarning) {
-        console.log(createWarning);
-    }
-    if (deriveWarning) {
-        console.log(deriveWarning);
-    }
-
-    if (!creds?.key) {
-        throw new Error('Failed to obtain Polymarket API credentials');
-    }
-
-    return new ClobClient(
-        CLOB_HTTP_URL,
-        POLYGON_CHAIN_ID,
-        wallet,
-        creds,
-        signatureType,
-        isProxySafe ? PROXY_WALLET : undefined
-    );
+const buildClobClient = async (_provider: ethers.providers.JsonRpcProvider): Promise<ClobClient> => {
+    return createClobClientUtil();
 };
 
 const formatClobAmount = (raw: string, decimals: number): string => {
@@ -220,7 +160,7 @@ async function checkAndSetAllowance() {
                     console.log('ℹ️  Detected native USDC (Polygon PoS) balance:');
                     console.log(`    ${nativeFormatted} tokens at ${NATIVE_USDC_ADDRESS}`);
                     console.log(
-                        '    Polymarket does not recognize this token. Swap to USDC.e (0x2791...) to trade.\n'
+                        '    Polymarket V2 uses pUSD (0xC011...). Deposit via polymarket.com to get pUSD.\n'
                     );
                 }
             } catch (nativeError) {
@@ -251,12 +191,12 @@ async function checkAndSetAllowance() {
                 polymarketAllowance,
                 polymarketDecimals
             );
-            console.log('⚠️  Polymarket collateral token is USDC.e (bridged) at address');
+            console.log('⚠️  Polymarket V2 collateral token is pUSD at address');
             console.log(`    ${POLYMARKET_COLLATERAL}`);
-            console.log(`⚠️  Polymarket-tracked USDC balance: ${polymarketBalanceFormatted} USDC`);
-            console.log(`⚠️  Polymarket-tracked allowance: ${polymarketAllowanceFormatted} USDC\n`);
+            console.log(`⚠️  Polymarket-tracked pUSD balance: ${polymarketBalanceFormatted} pUSD`);
+            console.log(`⚠️  Polymarket-tracked allowance: ${polymarketAllowanceFormatted} pUSD\n`);
             console.log(
-                '👉  Swap native USDC to USDC.e or update your .env to point at the collateral token before trading.\n'
+                '👉  Update your .env USDC_CONTRACT_ADDRESS to the pUSD address above before trading.\n'
             );
         }
 

@@ -1,4 +1,4 @@
-import { ClobClient, OrderType, Side } from '@polymarket/clob-client';
+import { ClobClient, OrderType, Side } from '@polymarket/clob-client-v2';
 import { ENV } from '../config/env';
 import { UserActivityInterface, UserPositionInterface } from '../interfaces/User';
 import { getUserActivityModel } from '../models/userHistory';
@@ -163,27 +163,27 @@ const postOrder = async (
                 order_arges = {
                     side: Side.SELL,
                     tokenID: my_position.asset,
-                    amount: remaining,
+                    size: remaining,
                     price: parseFloat(maxPriceBid.price),
                 };
             } else {
                 order_arges = {
                     side: Side.SELL,
                     tokenID: my_position.asset,
-                    amount: parseFloat(maxPriceBid.size),
+                    size: parseFloat(maxPriceBid.size),
                     price: parseFloat(maxPriceBid.price),
                 };
             }
             // Order args logged internally
-            const signedOrder = await clobClient.createMarketOrder(order_arges);
+            const signedOrder = await clobClient.createOrder(order_arges);
             const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
             if (resp.success === true) {
                 retry = 0;
                 Logger.orderResult(
                     true,
-                    `Sold ${order_arges.amount} tokens at $${order_arges.price}`
+                    `Sold ${order_arges.size} tokens at $${order_arges.price}`
                 );
-                remaining -= order_arges.amount;
+                remaining -= order_arges.size;
             } else {
                 const errorMessage = extractOrderError(resp);
                 if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
@@ -288,7 +288,7 @@ const postOrder = async (
             const order_arges = {
                 side: Side.BUY,
                 tokenID: trade.asset,
-                amount: orderSize,
+                size: orderSize / parseFloat(minPriceAsk.price), // tokens = USD ÷ price
                 price: parseFloat(minPriceAsk.price),
             };
 
@@ -296,17 +296,17 @@ const postOrder = async (
                 `Creating order: $${orderSize.toFixed(2)} @ $${minPriceAsk.price} (Balance: $${my_balance.toFixed(2)})`
             );
             // Order args logged internally
-            const signedOrder = await clobClient.createMarketOrder(order_arges);
+            const signedOrder = await clobClient.createOrder(order_arges);
             const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
             if (resp.success === true) {
                 retry = 0;
-                const tokensBought = order_arges.amount / order_arges.price;
+                const tokensBought = order_arges.size;
                 totalBoughtTokens += tokensBought;
                 Logger.orderResult(
                     true,
-                    `Bought $${order_arges.amount.toFixed(2)} at $${order_arges.price} (${tokensBought.toFixed(2)} tokens)`
+                    `Bought $${orderSize.toFixed(2)} at $${order_arges.price} (${tokensBought.toFixed(2)} tokens)`
                 );
-                remaining -= order_arges.amount;
+                remaining -= orderSize;
             } else {
                 const errorMessage = extractOrderError(resp);
                 if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
@@ -483,20 +483,20 @@ const postOrder = async (
             const order_arges = {
                 side: Side.SELL,
                 tokenID: trade.asset,
-                amount: sellAmount,
+                size: sellAmount, // already in tokens
                 price: parseFloat(maxPriceBid.price),
             };
             // Order args logged internally
-            const signedOrder = await clobClient.createMarketOrder(order_arges);
+            const signedOrder = await clobClient.createOrder(order_arges);
             const resp = await clobClient.postOrder(signedOrder, OrderType.FOK);
             if (resp.success === true) {
                 retry = 0;
-                totalSoldTokens += order_arges.amount;
+                totalSoldTokens += order_arges.size;
                 Logger.orderResult(
                     true,
-                    `Sold ${order_arges.amount} tokens at $${order_arges.price}`
+                    `Sold ${order_arges.size} tokens at $${order_arges.price}`
                 );
-                remaining -= order_arges.amount;
+                remaining -= order_arges.size;
             } else {
                 const errorMessage = extractOrderError(resp);
                 if (isInsufficientBalanceOrAllowanceError(errorMessage)) {
