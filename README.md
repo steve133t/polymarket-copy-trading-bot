@@ -25,7 +25,7 @@
 | 📈 **3 Copy Strategies** | FIXED, PERCENTAGE, or ADAPTIVE position sizing |
 | 🎚️ **Tiered Multipliers** | Different multipliers per trade size range |
 | 🔄 **Trade Aggregation** | Combine small trades into one executable order |
-| 🔁 **Auto-Resolve** | Automatically close winning/losing resolved positions |
+| 🔁 **Auto-Redeem** | Native Polymarket feature — enable in app settings (see below) |
 | 💾 **MongoDB Storage** | Persistent trade and position history |
 | 🐳 **Docker Support** | Production-ready containerized deployment |
 
@@ -411,6 +411,19 @@ npm run redeem           # Redeem winning positions for USDC
 npm run close:stale      # Close old inactive positions
 npm run build            # Compile TypeScript to dist/
 ```
+
+---
+
+## Auto-Redeem (Polymarket Native Feature)
+
+Polymarket has a built-in auto-redeem feature that automatically redeems your winning positions once a market resolves — no gas or manual action needed.
+
+**How to enable it:**
+1. Go to [polymarket.com](https://polymarket.com) and connect your wallet
+2. Open **Settings** (top-right menu)
+3. Toggle **Auto-Redeem** to on
+
+> Once enabled, Polymarket will automatically convert your winning YES/NO tokens to USDC after each market resolves. There is no bot-side implementation needed.
 
 ---
 

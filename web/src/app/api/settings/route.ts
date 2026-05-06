@@ -58,8 +58,6 @@ function envToSettings(env: Record<string, string>): BotSettings {
       tradeAggregationEnabled: env.TRADE_AGGREGATION_ENABLED === 'true',
       tradeAggregationWindowSeconds: parseInt(env.TRADE_AGGREGATION_WINDOW_SECONDS || '300', 10),
       previewMode: env.PREVIEW_MODE === 'true',
-      autoResolveEnabled: env.AUTO_RESOLVE_ENABLED === 'true',
-      autoResolveInterval: parseInt(env.AUTO_RESOLVE_INTERVAL || '60', 10),
     },
     network: {
       requestTimeoutMs: parseInt(env.REQUEST_TIMEOUT_MS || '10000', 10),
@@ -213,12 +211,6 @@ function settingsToEnvUpdates(update: SettingsUpdate): Record<string, string | n
     }
     if (update.botSettings.previewMode !== undefined) {
       envUpdates.PREVIEW_MODE = update.botSettings.previewMode.toString();
-    }
-    if (update.botSettings.autoResolveEnabled !== undefined) {
-      envUpdates.AUTO_RESOLVE_ENABLED = update.botSettings.autoResolveEnabled.toString();
-    }
-    if (update.botSettings.autoResolveInterval !== undefined) {
-      envUpdates.AUTO_RESOLVE_INTERVAL = update.botSettings.autoResolveInterval.toString();
     }
   }
 

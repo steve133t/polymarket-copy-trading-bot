@@ -41,8 +41,6 @@ export interface BotSettings {
     tradeAggregationEnabled: boolean;
     tradeAggregationWindowSeconds: number;
     previewMode: boolean;
-    autoResolveEnabled: boolean;
-    autoResolveInterval: number;
   };
 
   // Network Settings

@@ -308,9 +308,6 @@ export const ENV = {
     MONGO_URI: process.env.MONGO_URI as string,
     RPC_URL: process.env.RPC_URL as string,
     USDC_CONTRACT_ADDRESS: process.env.USDC_CONTRACT_ADDRESS as string,
-    // Auto-resolve settings (automatically sell positions at 100% or 0%)
-    AUTO_RESOLVE_ENABLED: process.env.AUTO_RESOLVE_ENABLED === 'true',
-    AUTO_RESOLVE_INTERVAL: parseInt(process.env.AUTO_RESOLVE_INTERVAL || '60', 10), // Check every 60s by default
     PREVIEW_MODE: process.env.PREVIEW_MODE === 'true',
 };
 
@@ -334,8 +331,6 @@ export function reloadConfig(): void {
     ENV.NETWORK_RETRY_LIMIT = parseInt(process.env.NETWORK_RETRY_LIMIT || '3', 10);
     ENV.TRADE_AGGREGATION_ENABLED = process.env.TRADE_AGGREGATION_ENABLED === 'true';
     ENV.TRADE_AGGREGATION_WINDOW_SECONDS = parseInt(process.env.TRADE_AGGREGATION_WINDOW_SECONDS || '300', 10);
-    ENV.AUTO_RESOLVE_ENABLED = process.env.AUTO_RESOLVE_ENABLED === 'true';
-    ENV.AUTO_RESOLVE_INTERVAL = parseInt(process.env.AUTO_RESOLVE_INTERVAL || '60', 10);
     ENV.PREVIEW_MODE = process.env.PREVIEW_MODE === 'true';
     ENV.USER_ADDRESSES = parseUserAddresses(process.env.USER_ADDRESSES as string);
 }
