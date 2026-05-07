@@ -194,17 +194,20 @@ async function fetchRecentTrades(conditionId: string): Promise<any[]> {
     }
 }
 
-async function fetchMarketResolution(conditionId: string): Promise<{ resolved: boolean; winnerIdx: number } | null> {
+async function fetchMarketResolution(slug: string): Promise<{ resolved: boolean; winnerIdx: number } | null> {
     try {
+        // Use /events?slug=... — confirmed working endpoint (condition_ids filter returns empty)
         const res = await axios.get(
-            `https://gamma-api.polymarket.com/markets?condition_ids=${conditionId}`,
+            `https://gamma-api.polymarket.com/events?slug=${slug}`,
             { timeout: 8000 }
         );
-        const market = Array.isArray(res.data) && res.data.length > 0 ? res.data[0] : null;
-        if (market && market.closed && market.outcomePrices) {
-            const prices = JSON.parse(market.outcomePrices).map(Number);
-            const winnerIdx = prices.findIndex((p: number) => p >= 0.99);
-            if (winnerIdx >= 0) return { resolved: true, winnerIdx };
+        if (Array.isArray(res.data) && res.data.length > 0) {
+            const market = res.data[0].markets?.[0];
+            if (market && market.closed && market.outcomePrices) {
+                const prices = JSON.parse(market.outcomePrices).map(Number);
+                const winnerIdx = prices.findIndex((p: number) => p >= 0.99);
+                if (winnerIdx >= 0) return { resolved: true, winnerIdx };
+            }
         }
         return { resolved: false, winnerIdx: -1 };
     } catch {
@@ -277,16 +280,21 @@ async function processMarket(market: any, session: SessionConfig, cashLeft: { va
 async function checkResolutions(): Promise<void> {
     const Position = getPositionModel();
     const unresolved = await Position.find({ resolved: false }).exec();
-    const conditionIds = Array.from(new Set(unresolved.map((p) => p.conditionId)));
+
+    // Group by slug since fetchMarketResolution uses slug now
+    const slugToPositions = new Map<string, any[]>();
+    for (const p of unresolved) {
+        const key = p.slug;
+        if (!slugToPositions.has(key)) slugToPositions.set(key, []);
+        slugToPositions.get(key)!.push(p);
+    }
 
     let resolvedCount = 0;
     let totalPnlChange = 0;
 
-    for (const conditionId of conditionIds) {
-        const result = await fetchMarketResolution(conditionId);
+    for (const [slug, positions] of slugToPositions.entries()) {
+        const result = await fetchMarketResolution(slug);
         if (!result || !result.resolved) continue;
-
-        const positions = unresolved.filter((p) => p.conditionId === conditionId);
         for (const pos of positions) {
             const won = pos.outcomeIndex === result.winnerIdx;
             const payout = won ? pos.tokens : 0;
