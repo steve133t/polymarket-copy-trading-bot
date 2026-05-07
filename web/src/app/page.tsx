@@ -17,13 +17,14 @@ import { TradersTable } from '@/components/TradersTable';
 import { MyTradesView } from '@/components/MyTradesView';
 import { SettingsView } from '@/components/SettingsView';
 import { PreviewStatsView } from '@/components/PreviewStatsView';
+import { DualThresholdView } from '@/components/DualThresholdView';
 import { StatusBar } from '@/components/StatusBar';
 import { Button } from '@/components/ui/button';
 import { TimeRangeFilter, TimeRange } from '@/components/TimeRangeFilter';
 import BotOfflineAlert from '@/components/BotOfflineAlert';
 import { useBotStatus } from '@/hooks/useBotStatus';
 
-type ViewMode = 'traders' | 'my-trades' | 'paper' | 'settings';
+type ViewMode = 'traders' | 'my-trades' | 'paper' | 'strategy' | 'settings';
 
 export default function Home() {
   const [viewMode, setViewMode] = useState<ViewMode>('traders');
@@ -127,6 +128,8 @@ export default function Home() {
         return <>My Copy Trading Performance</>;
       case 'paper':
         return <>Paper trading — trades detected but not executed</>;
+      case 'strategy':
+        return <>Dual-threshold strategy — independent paper trading</>;
       case 'settings':
         return <>Configure bot settings and execute actions</>;
     }
@@ -136,6 +139,7 @@ export default function Home() {
     { id: 'traders', label: 'Traders' },
     { id: 'my-trades', label: 'My Trades' },
     { id: 'paper', label: 'Paper' },
+    { id: 'strategy', label: 'Strategy' },
     { id: 'settings', label: 'Settings' },
   ];
 
@@ -248,6 +252,8 @@ export default function Home() {
         {viewMode === 'my-trades' && <MyTradesView />}
 
         {viewMode === 'paper' && <PreviewStatsView />}
+
+        {viewMode === 'strategy' && <DualThresholdView />}
 
         {viewMode === 'settings' && <SettingsView />}
       </div>
