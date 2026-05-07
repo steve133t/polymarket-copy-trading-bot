@@ -69,6 +69,13 @@ const activitySchema = new Schema({
     botCopyPrice: { type: Number, required: false },
 });
 
+// Compound index makes the executor's "find unflagged trades" query O(log N) instead of O(N).
+// Critical when each wallet collection has 100k+ trades.
+activitySchema.index({ type: 1, bot: 1, botExcutedTime: 1, timestamp: -1 });
+activitySchema.index({ timestamp: -1 });
+// For paper-trading sell logic that queries previous preview trades for a market
+activitySchema.index({ asset: 1, conditionId: 1, previewMode: 1 });
+
 // Using Model<any> lets callers access arbitrary schema fields without
 // TypeScript complaining, while still providing all Model query methods.
 // The re-use guard prevents "Cannot overwrite model once compiled" errors

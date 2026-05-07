@@ -106,18 +106,48 @@ interface AggregatedTrade {
 // Buffer for aggregating trades
 const tradeAggregationBuffer: Map<string, AggregatedTrade> = new Map();
 
+// Maximum trades to load per executor tick — prevents OOM on big backlogs
+const MAX_TRADES_PER_TICK = 50;
+// Only consider trades from the last N seconds — anything older gets auto-skipped
+// (avoids processing stale backlog when bot was down or fell behind)
+const TRADE_FRESHNESS_WINDOW_SEC = 600; // 10 minutes
+const STALE_TRADE_CUTOFF_SEC = 60 * 60; // anything older than 1 hour: auto-skip silently
+
 const readTempTrades = async (): Promise<TradeWithUser[]> => {
     refreshUserActivityModels();
 
+    const nowSec = Math.floor(Date.now() / 1000);
+    const freshSince = nowSec - TRADE_FRESHNESS_WINDOW_SEC;
+    const staleBefore = nowSec - STALE_TRADE_CUTOFF_SEC;
     const allTrades: TradeWithUser[] = [];
 
     for (const { address, model } of userActivityModels) {
-        // Only get trades that haven't been processed yet (bot: false AND botExcutedTime: 0)
-        // This prevents processing the same trade multiple times
+        // Auto-skip trades older than 1h so they don't pile up forever.
+        // Fire-and-forget — don't block the tick on this.
+        model
+            .updateMany(
+                {
+                    type: 'TRADE',
+                    bot: false,
+                    botExcutedTime: 0,
+                    timestamp: { $lt: staleBefore },
+                },
+                { $set: { bot: true, botExcutedTime: 999, skipped: true, skipReason: 'stale' } }
+            )
+            .exec()
+            .catch(() => undefined);
+
+        // Only fetch fresh, unprocessed trades — limited batch, sorted oldest-first
+        // so we process in chronological order even when batched.
         const trades = await model
             .find({
-                $and: [{ type: 'TRADE' }, { bot: false }, { botExcutedTime: 0 }],
+                type: 'TRADE',
+                bot: false,
+                botExcutedTime: 0,
+                timestamp: { $gte: freshSince },
             })
+            .sort({ timestamp: 1 })
+            .limit(MAX_TRADES_PER_TICK)
             .exec();
 
         const tradesWithUser = trades.map((trade) => ({

@@ -718,10 +718,19 @@ function simulatePaperAccount(
     })
     .sort((a, b) => Math.abs(b.totalPnl) - Math.abs(a.totalPnl));
 
+  // Dust threshold — open positions worth less than $1 (mark price * tokens) are excluded
+  // from summary stats and the markets list since they're typically forgotten leftover tokens
+  // in resolved-but-not-redeemed micro-markets.
+  const DUST_THRESHOLD_USD = 1.0;
+  const isDustOpen = (m: MarketEntry) => !m.resolved && m.openTokens > 0.000001 && m.marketValue < DUST_THRESHOLD_USD;
+  const isMeaningfulOpen = (m: MarketEntry) => !m.resolved && m.openTokens > 0.000001 && m.marketValue >= DUST_THRESHOLD_USD;
+
   const closedMarkets = markets.filter(m => (m.sells > 0 || m.resolved) && Math.abs(m.pnl) > 0.000001);
   const profitableMarkets = closedMarkets.filter(m => m.pnl > 0).length;
   const losingMarkets = closedMarkets.filter(m => m.pnl < 0).length;
-  const openMarkets = markets.filter(m => m.openTokens > 0.000001 && !m.resolved).length;
+  const openMarkets = markets.filter(isMeaningfulOpen).length;
+  const dustMarkets = markets.filter(isDustOpen).length;
+  const dustValue = markets.filter(isDustOpen).reduce((s, m) => s + m.marketValue, 0);
   const pendingMarkets = markets.filter(m => m.openTokens > 0.000001 && m.pendingResolution).length;
   const resolvedMarkets = markets.filter(m => m.resolved).length;
   const realizedPnl = markets.reduce((sum, market) => sum + market.pnl, 0);
@@ -796,11 +805,12 @@ function simulatePaperAccount(
       };
     })
     .sort((a, b) => b.totalPnl - a.totalPnl);
+  // Open position value EXCLUDES dust to match what's shown in the UI list
   const openPositionValue = markets
-    .filter(m => !m.resolved)
+    .filter(isMeaningfulOpen)
     .reduce((sum, market) => sum + market.marketValue, 0);
   const openCostBasis = markets
-    .filter(m => !m.resolved)
+    .filter(isMeaningfulOpen)
     .reduce((sum, market) => sum + market.costBasis, 0);
   const unrealizedPnl = openPositionValue - openCostBasis;
   const totalEquity = cashBalance + lockedProfit + openPositionValue;
@@ -835,6 +845,8 @@ function simulatePaperAccount(
       profitableMarkets,
       losingMarkets,
       openMarkets,
+      dustMarkets,
+      dustValue: round(dustValue),
       pendingMarkets,
       resolvedMarkets,
       winRate: closedMarkets.length > 0
@@ -875,7 +887,12 @@ export async function GET() {
       },
       summary: simulation.summary,
       recentTrades: simulation.recentTrades,
-      markets: simulation.markets.slice(0, 20),
+      // Exclude dust open positions from the displayed list (resolved markets always shown for P&L history)
+      markets: (() => {
+        const visible = simulation.markets.filter(m => m.resolved || m.openTokens === 0 || m.marketValue >= 1.0);
+        return visible.slice(0, 20);
+      })(),
+      totalMarketsCount: simulation.markets.filter(m => m.resolved || m.openTokens === 0 || m.marketValue >= 1.0).length,
       walletSummaries: simulation.walletSummaries,
     });
   } catch (error) {

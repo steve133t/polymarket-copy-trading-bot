@@ -88,11 +88,14 @@ interface PreviewStats {
     profitableMarkets: number;
     losingMarkets: number;
     openMarkets: number;
+    dustMarkets?: number;
+    dustValue?: number;
     pendingMarkets?: number;
     resolvedMarkets?: number;
     winRate: number;
     estimatedTrades?: number;
   };
+  totalMarketsCount?: number;
   walletSummaries: {
     trackedAddress: string;
     buys: number;
@@ -554,7 +557,7 @@ export function PreviewStatsView() {
                   <p className="text-sm text-muted-foreground">No wallet attribution yet.</p>
                 ) : null}
                 {(stats.walletSummaries ?? []).map(wallet => (
-                  <div key={wallet.trackedAddress} className="grid grid-cols-[minmax(120px,1fr)_repeat(5,max-content)] items-center gap-4 border-b border-muted/30 py-1.5 text-xs">
+                  <div key={wallet.trackedAddress} className="grid grid-cols-[minmax(120px,1fr)_repeat(6,max-content)] items-center gap-4 border-b border-muted/30 py-1.5 text-xs">
                     <span className="font-mono text-muted-foreground">{formatAddress(wallet.trackedAddress)}</span>
                     <span className={`w-20 text-right font-mono font-bold ${pnlColor(wallet.totalPnl)}`}>
                       {pnlSign(wallet.totalPnl)}${Math.abs(wallet.totalPnl).toFixed(2)}
@@ -563,6 +566,15 @@ export function PreviewStatsView() {
                     <span className="w-20 text-right font-mono text-muted-foreground">{wallet.wins}W / {wallet.losses}L</span>
                     <span className="w-24 text-right font-mono text-muted-foreground">${wallet.buyVolume.toFixed(2)} buys</span>
                     <span className="w-24 text-right font-mono text-muted-foreground">{wallet.skippedTrades} skip</span>
+                    <a
+                      href={`https://polymarket.com/profile/${wallet.trackedAddress}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded border border-muted/50 px-2 py-0.5 text-xs text-muted-foreground transition hover:border-primary hover:text-primary"
+                      title="View wallet on Polymarket"
+                    >
+                      View ↗
+                    </a>
                   </div>
                 ))}
               </div>
@@ -575,6 +587,17 @@ export function PreviewStatsView() {
               <CardDescription>
                 Sorted by total market impact
                 {stats.summary.estimatedTrades ? ` · ${stats.summary.estimatedTrades} older trades estimated` : ''}
+                {(() => {
+                  const totalCount = (stats as unknown as { totalMarketsCount?: number }).totalMarketsCount;
+                  const shown = stats.markets?.length ?? 0;
+                  if (totalCount && totalCount > shown) {
+                    return ` · showing top ${shown} of ${totalCount}`;
+                  }
+                  return '';
+                })()}
+                {(stats.summary.dustMarkets ?? 0) > 0 ? (
+                  <> · {stats.summary.dustMarkets} dust positions hidden (&lt;$1, totaling ${(stats.summary.dustValue ?? 0).toFixed(2)})</>
+                ) : null}
               </CardDescription>
             </CardHeader>
             <CardContent>
