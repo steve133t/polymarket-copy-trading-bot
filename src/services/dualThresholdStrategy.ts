@@ -24,7 +24,7 @@ const DEFAULT_ASSETS = ['BTC', 'ETH', 'SOL'];
 // Default to 15m only since it's ~50x more profitable than 5m per backtest
 const DEFAULT_WINDOWS = ['15m'];
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 3000; // Tighter polling so we don't miss last-second price dips
 
 // All available crypto series
 // 15m windows are dramatically more profitable (~50x EV) than 5m per backtest
@@ -136,16 +136,29 @@ async function getCashBalance(session: SessionConfig): Promise<number> {
 
 async function fetchActiveMarkets(): Promise<any[]> {
     const allMarkets: any[] = [];
+    const now = Date.now() / 1000;
+
     for (const series of ACTIVE_SERIES) {
         try {
+            // Sort by endDate ascending so we get markets CLOSING SOONEST first.
+            // Those are the ones where prices crash below threshold.
             const res = await axios.get(
-                `https://gamma-api.polymarket.com/events?series_id=${series.id}&active=true&closed=false&limit=50&order=startDate&ascending=false`,
+                `https://gamma-api.polymarket.com/events?series_id=${series.id}&active=true&closed=false&limit=50&order=endDate&ascending=true`,
                 { timeout: 10000 }
             );
             if (Array.isArray(res.data)) {
                 for (const event of res.data) {
                     for (const market of event.markets || []) {
                         if (market.conditionId && market.active && !market.closed) {
+                            // Compute closeTs from slug (eth-updown-15m-1778193900)
+                            const tsMatch = String(market.slug || '').match(/(\d+)$/);
+                            const startTs = tsMatch ? Number(tsMatch[1]) : 0;
+                            const windowSec = series.window === '15m' ? 15 * 60 : 5 * 60;
+                            const closeTs = startTs + windowSec;
+                            // Only keep markets that haven't closed yet
+                            if (closeTs <= now) continue;
+                            // Skip markets > 16 min away (just opened, prices won't dip yet)
+                            if (closeTs - now > 16 * 60) continue;
                             allMarkets.push({
                                 conditionId: market.conditionId,
                                 slug: market.slug,
@@ -154,6 +167,7 @@ async function fetchActiveMarkets(): Promise<any[]> {
                                 clobTokenIds: JSON.parse(market.clobTokenIds || '[]'),
                                 asset: series.asset,
                                 window: series.window,
+                                closeTs,
                             });
                         }
                     }
@@ -163,6 +177,8 @@ async function fetchActiveMarkets(): Promise<any[]> {
             // skip on error
         }
     }
+    // Process markets closing soonest first (where prices have crashed)
+    allMarkets.sort((a, b) => a.closeTs - b.closeTs);
     return allMarkets;
 }
 
