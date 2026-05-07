@@ -19,17 +19,22 @@ const DEFAULT_THRESHOLD = 0.10;
 const DEFAULT_PER_BUY = 1.0;
 const DEFAULT_SLIPPAGE_BPS = 2000; // 20%
 const DEFAULT_STARTING_BALANCE = 100;
-const DEFAULT_ASSETS = ['BTC', 'SOL'];
+// All assets work well on 15m (BTC +295%, ETH +161%, SOL +1130% ROI). Default to all.
+const DEFAULT_ASSETS = ['BTC', 'ETH', 'SOL'];
+// Default to 15m only since it's ~50x more profitable than 5m per backtest
+const DEFAULT_WINDOWS = ['15m'];
 
 const POLL_INTERVAL_MS = 5000;
 
 // All available crypto series
+// 15m windows are dramatically more profitable (~50x EV) than 5m per backtest
 const ACTIVE_SERIES = [
     { id: 10684, asset: 'BTC', window: '5m' },
     { id: 10683, asset: 'ETH', window: '5m' },
     { id: 10686, asset: 'SOL', window: '5m' },
     { id: 10192, asset: 'BTC', window: '15m' },
     { id: 10191, asset: 'ETH', window: '15m' },
+    { id: 10423, asset: 'SOL', window: '15m' }, // Best EV per backtest: +$13.42/market
 ];
 
 // === MongoDB schemas ===
@@ -62,6 +67,7 @@ const dualThresholdSessionSchema = new Schema({
     perBuyUSD: { type: Number, default: DEFAULT_PER_BUY },
     slippageBps: { type: Number, default: DEFAULT_SLIPPAGE_BPS },
     enabledAssets: { type: [String], default: DEFAULT_ASSETS },
+    enabledWindows: { type: [String], default: DEFAULT_WINDOWS },
     startedAt: { type: Number, default: 0 },
     updatedAt: { type: Date, default: Date.now },
 }, { _id: false });
@@ -88,6 +94,7 @@ interface SessionConfig {
     perBuyUSD: number;
     slippageBps: number;
     enabledAssets: string[];
+    enabledWindows: string[];
 }
 
 async function getSessionConfig(): Promise<SessionConfig> {
@@ -103,11 +110,17 @@ async function getSessionConfig(): Promise<SessionConfig> {
             perBuyUSD: DEFAULT_PER_BUY,
             slippageBps: DEFAULT_SLIPPAGE_BPS,
             enabledAssets: DEFAULT_ASSETS,
+            enabledWindows: DEFAULT_WINDOWS,
             startedAt: Math.floor(Date.now() / 1000),
         });
         return newDoc.toObject() as SessionConfig;
     }
-    return doc.toObject() as SessionConfig;
+    const obj = doc.toObject() as SessionConfig;
+    // Backfill if old session doesn't have enabledWindows
+    if (!Array.isArray(obj.enabledWindows) || obj.enabledWindows.length === 0) {
+        obj.enabledWindows = DEFAULT_WINDOWS;
+    }
+    return obj;
 }
 
 async function getCashBalance(session: SessionConfig): Promise<number> {
@@ -187,6 +200,7 @@ async function processMarket(market: any, session: SessionConfig, cashLeft: { va
     const Position = getPositionModel();
 
     if (!session.enabledAssets.includes(market.asset)) return;
+    if (!session.enabledWindows.includes(market.window)) return;
     if (cashLeft.value < session.perBuyUSD) return; // Out of cash
 
     const existing = await Position.find({ conditionId: market.conditionId, resolved: false }).exec();
@@ -321,12 +335,15 @@ const dualThresholdStrategy = async (): Promise<void> => {
             if (cycle % 12 === 0) {
                 Logger.info(
                     `[DUAL-THRESHOLD] Threshold=$${session.threshold} | Per-buy=$${session.perBuyUSD} | ` +
-                    `Cash=$${cashAvailable.toFixed(2)}/$${session.startingBalance} | Assets=${session.enabledAssets.join('/')}`
+                    `Cash=$${cashAvailable.toFixed(2)}/$${session.startingBalance} | ` +
+                    `Assets=${session.enabledAssets.join('/')} | Windows=${session.enabledWindows.join('/')}`
                 );
             }
 
             const markets = await fetchActiveMarkets();
-            const tradeable = markets.filter((m) => session.enabledAssets.includes(m.asset));
+            const tradeable = markets.filter(
+                (m) => session.enabledAssets.includes(m.asset) && session.enabledWindows.includes(m.window)
+            );
 
             const cashLeft = { value: cashAvailable };
             const BATCH = 8;

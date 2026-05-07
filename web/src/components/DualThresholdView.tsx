@@ -14,6 +14,7 @@ interface Session {
   perBuyUSD: number;
   slippageBps: number;
   enabledAssets: string[];
+  enabledWindows: string[];
   startedAt: number;
 }
 
@@ -74,6 +75,7 @@ interface Stats {
 
 const REFRESH_INTERVAL = 10;
 const ALL_ASSETS = ['BTC', 'SOL', 'ETH'];
+const ALL_WINDOWS = ['5m', '15m'];
 
 export function DualThresholdView() {
   const [stats, setStats] = useState<Stats | null>(null);
@@ -86,7 +88,8 @@ export function DualThresholdView() {
   const [threshold, setThreshold] = useState('0.10');
   const [perBuyUSD, setPerBuyUSD] = useState('1');
   const [slippagePercent, setSlippagePercent] = useState('20');
-  const [enabledAssets, setEnabledAssets] = useState<string[]>(['BTC', 'SOL']);
+  const [enabledAssets, setEnabledAssets] = useState<string[]>(['BTC', 'ETH', 'SOL']);
+  const [enabledWindows, setEnabledWindows] = useState<string[]>(['15m']);
   const formInitialized = useRef(false);
 
   const syncForm = useCallback((s: Session) => {
@@ -95,6 +98,7 @@ export function DualThresholdView() {
     setPerBuyUSD(String(s.perBuyUSD));
     setSlippagePercent(String((s.slippageBps || 0) / 100));
     setEnabledAssets(s.enabledAssets);
+    setEnabledWindows(s.enabledWindows && s.enabledWindows.length > 0 ? s.enabledWindows : ['15m']);
   }, []);
 
   const fetchStats = useCallback(async (silent = false) => {
@@ -142,6 +146,7 @@ export function DualThresholdView() {
         perBuyUSD: Number(perBuyUSD),
         slippageBps: Math.round(Number(slippagePercent) * 100),
         enabledAssets,
+        enabledWindows,
       };
       const res = await fetch('/api/dual-threshold-stats', {
         method: 'POST',
@@ -162,6 +167,12 @@ export function DualThresholdView() {
   const toggleAsset = (asset: string) => {
     setEnabledAssets((prev) =>
       prev.includes(asset) ? prev.filter((a) => a !== asset) : [...prev, asset]
+    );
+  };
+
+  const toggleWindow = (window: string) => {
+    setEnabledWindows((prev) =>
+      prev.includes(window) ? prev.filter((w) => w !== window) : [...prev, window]
     );
   };
 
@@ -265,15 +276,33 @@ export function DualThresholdView() {
             </div>
           </div>
 
-          <div className="mt-4">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Enabled Assets</p>
-            <div className="flex gap-3">
-              {ALL_ASSETS.map((asset) => (
-                <div key={asset} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
-                  <span className="text-xs font-mono">{asset}</span>
-                  <Switch checked={enabledAssets.includes(asset)} onCheckedChange={() => toggleAsset(asset)} />
-                </div>
-              ))}
+          <div className="mt-4 flex flex-wrap gap-6">
+            <div>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Enabled Assets</p>
+              <div className="flex gap-2">
+                {ALL_ASSETS.map((asset) => (
+                  <div key={asset} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
+                    <span className="text-xs font-mono">{asset}</span>
+                    <Switch checked={enabledAssets.includes(asset)} onCheckedChange={() => toggleAsset(asset)} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">
+                Time Windows
+                <span className="ml-2 text-[10px] text-muted-foreground/60">
+                  (15m is ~50× more profitable than 5m per backtest)
+                </span>
+              </p>
+              <div className="flex gap-2">
+                {ALL_WINDOWS.map((window) => (
+                  <div key={window} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
+                    <span className="text-xs font-mono">{window}</span>
+                    <Switch checked={enabledWindows.includes(window)} onCheckedChange={() => toggleWindow(window)} />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 

@@ -24,7 +24,8 @@ const DEFAULT_SESSION = {
   threshold: 0.10,
   perBuyUSD: 1.0,
   slippageBps: 2000,
-  enabledAssets: ['BTC', 'SOL'],
+  enabledAssets: ['BTC', 'ETH', 'SOL'],
+  enabledWindows: ['15m'], // 15m default — ~50x more profitable than 5m per backtest
   startedAt: 0,
 };
 
@@ -144,7 +145,10 @@ export async function GET() {
         threshold: Number(session.threshold) || 0.1,
         perBuyUSD: Number(session.perBuyUSD) || 1,
         slippageBps: Number(session.slippageBps) || 2000,
-        enabledAssets: Array.isArray(session.enabledAssets) ? session.enabledAssets : ['BTC', 'SOL'],
+        enabledAssets: Array.isArray(session.enabledAssets) ? session.enabledAssets : ['BTC', 'ETH', 'SOL'],
+        enabledWindows: Array.isArray(session.enabledWindows) && session.enabledWindows.length > 0
+          ? session.enabledWindows
+          : ['15m'],
         startedAt: Number(session.startedAt) || 0,
       },
       summary: {
@@ -217,7 +221,10 @@ export async function POST(request: Request) {
         threshold: Number(body.threshold) || 0.1,
         perBuyUSD: Number(body.perBuyUSD) || 1,
         slippageBps: Number(body.slippageBps) || 2000,
-        enabledAssets: Array.isArray(body.enabledAssets) ? body.enabledAssets : ['BTC', 'SOL'],
+        enabledAssets: Array.isArray(body.enabledAssets) ? body.enabledAssets : ['BTC', 'ETH', 'SOL'],
+        enabledWindows: Array.isArray(body.enabledWindows) && body.enabledWindows.length > 0
+          ? body.enabledWindows
+          : ['15m'],
         startedAt: Math.floor(Date.now() / 1000),
         updatedAt: new Date(),
       };
@@ -236,6 +243,7 @@ export async function POST(request: Request) {
     if (body.perBuyUSD !== undefined) update.perBuyUSD = Number(body.perBuyUSD);
     if (body.slippageBps !== undefined) update.slippageBps = Number(body.slippageBps);
     if (Array.isArray(body.enabledAssets)) update.enabledAssets = body.enabledAssets;
+    if (Array.isArray(body.enabledWindows)) update.enabledWindows = body.enabledWindows;
 
     if (action === 'start') update.startedAt = Math.floor(Date.now() / 1000);
 
