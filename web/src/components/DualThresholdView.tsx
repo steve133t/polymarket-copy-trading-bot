@@ -429,27 +429,39 @@ export function DualThresholdView() {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm">Per-Asset Performance</CardTitle>
+              <CardDescription>Resolved P&amp;L per asset · open positions shown separately</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-1">
+                {/* Header row */}
+                {(stats.byAsset ?? []).length > 0 && (
+                  <div className="grid grid-cols-[60px_1fr_1fr_120px_120px] items-center gap-3 border-b border-muted/30 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                    <span>Asset</span>
+                    <span>Positions</span>
+                    <span>W / L</span>
+                    <span className="text-right">Open</span>
+                    <span className="text-right">Resolved P&amp;L</span>
+                  </div>
+                )}
                 {(stats.byAsset ?? []).length === 0 && (
                   <p className="text-sm text-muted-foreground">No positions yet — strategy is monitoring active markets...</p>
                 )}
                 {(stats.byAsset ?? []).map((a) => (
-                  <div key={a.asset} className="flex items-center justify-between border-b border-muted/30 py-1.5 text-xs">
-                    <div className="flex items-center gap-3">
-                      <Badge variant="outline" className="text-xs px-1.5 py-0">{a.asset}</Badge>
-                      <span className="text-muted-foreground">{a.positions} positions</span>
-                      <span className="text-muted-foreground">{a.wins}W / {a.losses}L ({a.winRate}%)</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {a.openCost > 0 && (
-                        <span className="font-mono text-muted-foreground">${a.openCost.toFixed(2)} open</span>
-                      )}
-                      <span className={`font-mono font-bold w-24 text-right ${pnlColor(a.resolvedPnl)}`}>
-                        {pnlSign(a.resolvedPnl)}${Math.abs(a.resolvedPnl).toFixed(2)}
-                      </span>
-                    </div>
+                  <div key={a.asset} className="grid grid-cols-[60px_1fr_1fr_120px_120px] items-center gap-3 border-b border-muted/30 py-1.5 text-xs">
+                    <Badge variant="outline" className="text-xs px-1.5 py-0 w-fit">{a.asset}</Badge>
+                    <span className="text-muted-foreground">{a.positions} total</span>
+                    <span className="text-muted-foreground">
+                      {a.wins}W / {a.losses}L
+                      {(a.wins + a.losses) > 0 ? ` (${a.winRate}%)` : ''}
+                    </span>
+                    <span className="text-right font-mono text-muted-foreground">
+                      {a.openCost > 0 ? `$${a.openCost.toFixed(2)}` : '—'}
+                    </span>
+                    <span className={`text-right font-mono font-bold ${a.wins + a.losses === 0 ? 'text-muted-foreground/40' : pnlColor(a.resolvedPnl)}`}>
+                      {a.wins + a.losses === 0
+                        ? 'pending'
+                        : `${pnlSign(a.resolvedPnl)}$${Math.abs(a.resolvedPnl).toFixed(2)}`}
+                    </span>
                   </div>
                 ))}
               </div>
