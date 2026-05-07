@@ -2,46 +2,47 @@
  * Dual-Side Threshold Paper Trading Service
  *
  * Strategy: For each active SOL/BTC up-or-down market, monitor both YES and NO prices.
- * When either side dips below THRESHOLD ($0.10), record a paper buy at that price + slippage.
+ * When either side dips below THRESHOLD, record a paper buy at that price + slippage.
  * Each side can only be bought ONCE per market. Hold to resolution.
  *
  * Backtest showed +10.4% ROI / +$0.12 EV per market at 20% slippage on 1500 markets.
  *
- * This is a SEPARATE service from the copy trader. It runs alongside.
+ * Config is stored in MongoDB and can be edited via the dashboard.
  */
 
 import axios from 'axios';
 import mongoose, { Schema } from 'mongoose';
 import Logger from '../utils/logger';
 
-// === STRATEGY PARAMETERS (validated by backtest) ===
-const THRESHOLD_USD = 0.10;        // Buy when either side dips below this
-const PER_BUY_USD = 1.0;           // $1 per paper buy
-const SLIPPAGE_BPS = 2000;         // 20% — realistic for fast crypto markets
-const TARGET_ASSETS = ['BTC', 'SOL']; // Skip ETH (backtest showed -1.4% ROI)
-const POLL_INTERVAL_MS = 5000;     // Check every 5 seconds
-const MAX_MARKET_AGE_MIN = 60;     // Ignore markets that opened > 60min ago
+// === DEFAULTS (used when no session in DB) ===
+const DEFAULT_THRESHOLD = 0.10;
+const DEFAULT_PER_BUY = 1.0;
+const DEFAULT_SLIPPAGE_BPS = 2000; // 20%
+const DEFAULT_STARTING_BALANCE = 100;
+const DEFAULT_ASSETS = ['BTC', 'SOL'];
 
-// === SERIES IDS for active crypto up/down markets ===
+const POLL_INTERVAL_MS = 5000;
+
+// All available crypto series
 const ACTIVE_SERIES = [
     { id: 10684, asset: 'BTC', window: '5m' },
-    { id: 10683, asset: 'ETH', window: '5m' }, // tracked but not bought
+    { id: 10683, asset: 'ETH', window: '5m' },
     { id: 10686, asset: 'SOL', window: '5m' },
     { id: 10192, asset: 'BTC', window: '15m' },
     { id: 10191, asset: 'ETH', window: '15m' },
 ];
 
-// === MongoDB schema for paper positions ===
+// === MongoDB schemas ===
 const dualThresholdPositionSchema = new Schema({
     conditionId: { type: String, required: true, index: true },
     slug: { type: String, required: true },
     title: { type: String, required: true },
-    asset: { type: String, required: true }, // BTC / ETH / SOL
-    window: { type: String, required: true }, // 5m / 15m
-    outcome: { type: String, required: true }, // 'Up' / 'Down'
-    outcomeIndex: { type: Number, required: true }, // 0 or 1
-    triggerPrice: { type: Number, required: true }, // displayed price at trigger
-    fillPrice: { type: Number, required: true }, // after slippage
+    asset: { type: String, required: true },
+    window: { type: String, required: true },
+    outcome: { type: String, required: true },
+    outcomeIndex: { type: Number, required: true },
+    triggerPrice: { type: Number, required: true },
+    fillPrice: { type: Number, required: true },
     tokens: { type: Number, required: true },
     costUSD: { type: Number, required: true },
     entryTimestamp: { type: Number, required: true },
@@ -51,17 +52,74 @@ const dualThresholdPositionSchema = new Schema({
     pnl: { type: Number, default: 0 },
     resolvedTimestamp: { type: Number, default: 0 },
 });
-
-// Compound index for fast resolution checks
 dualThresholdPositionSchema.index({ resolved: 1, conditionId: 1 });
 
-const COLLECTION_NAME = 'dual_threshold_positions';
-const getModel = () =>
-    (mongoose.models[COLLECTION_NAME] as mongoose.Model<any>) ||
-    mongoose.model<any>(COLLECTION_NAME, dualThresholdPositionSchema, COLLECTION_NAME);
+const dualThresholdSessionSchema = new Schema({
+    _id: { type: String, default: 'default' },
+    active: { type: Boolean, default: true },
+    startingBalance: { type: Number, default: DEFAULT_STARTING_BALANCE },
+    threshold: { type: Number, default: DEFAULT_THRESHOLD },
+    perBuyUSD: { type: Number, default: DEFAULT_PER_BUY },
+    slippageBps: { type: Number, default: DEFAULT_SLIPPAGE_BPS },
+    enabledAssets: { type: [String], default: DEFAULT_ASSETS },
+    startedAt: { type: Number, default: 0 },
+    updatedAt: { type: Date, default: Date.now },
+}, { _id: false });
+
+const POSITIONS_COLLECTION = 'dual_threshold_positions';
+const SESSIONS_COLLECTION = 'dual_threshold_sessions';
+const SESSION_ID = 'default';
+
+const getPositionModel = () =>
+    (mongoose.models[POSITIONS_COLLECTION] as mongoose.Model<any>) ||
+    mongoose.model<any>(POSITIONS_COLLECTION, dualThresholdPositionSchema, POSITIONS_COLLECTION);
+
+const getSessionModel = () =>
+    (mongoose.models[SESSIONS_COLLECTION] as mongoose.Model<any>) ||
+    mongoose.model<any>(SESSIONS_COLLECTION, dualThresholdSessionSchema, SESSIONS_COLLECTION);
 
 // === Helpers ===
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+interface SessionConfig {
+    active: boolean;
+    startingBalance: number;
+    threshold: number;
+    perBuyUSD: number;
+    slippageBps: number;
+    enabledAssets: string[];
+}
+
+async function getSessionConfig(): Promise<SessionConfig> {
+    const Session = getSessionModel();
+    const doc = await Session.findOne({ _id: SESSION_ID }).exec();
+    if (!doc) {
+        // Create default session
+        const newDoc = await Session.create({
+            _id: SESSION_ID,
+            active: true,
+            startingBalance: DEFAULT_STARTING_BALANCE,
+            threshold: DEFAULT_THRESHOLD,
+            perBuyUSD: DEFAULT_PER_BUY,
+            slippageBps: DEFAULT_SLIPPAGE_BPS,
+            enabledAssets: DEFAULT_ASSETS,
+            startedAt: Math.floor(Date.now() / 1000),
+        });
+        return newDoc.toObject() as SessionConfig;
+    }
+    return doc.toObject() as SessionConfig;
+}
+
+async function getCashBalance(session: SessionConfig): Promise<number> {
+    const Position = getPositionModel();
+    const positions = await Position.find({}).exec();
+    let cash = session.startingBalance;
+    for (const p of positions) {
+        cash -= Number(p.costUSD) || 0;       // Spent on buy
+        if (p.resolved) cash += Number(p.payoutUSD) || 0; // Received on resolution
+    }
+    return cash;
+}
 
 async function fetchActiveMarkets(): Promise<any[]> {
     const allMarkets: any[] = [];
@@ -83,7 +141,6 @@ async function fetchActiveMarkets(): Promise<any[]> {
                                 clobTokenIds: JSON.parse(market.clobTokenIds || '[]'),
                                 asset: series.asset,
                                 window: series.window,
-                                eventEndDate: event.endDate,
                             });
                         }
                     }
@@ -126,26 +183,19 @@ async function fetchMarketResolution(conditionId: string): Promise<{ resolved: b
     }
 }
 
-// === Process price triggers for a market ===
-async function processMarket(market: any): Promise<void> {
-    const Position = getModel();
+async function processMarket(market: any, session: SessionConfig, cashLeft: { value: number }): Promise<void> {
+    const Position = getPositionModel();
 
-    // Skip if we shouldn't trade this asset
-    if (!TARGET_ASSETS.includes(market.asset)) return;
+    if (!session.enabledAssets.includes(market.asset)) return;
+    if (cashLeft.value < session.perBuyUSD) return; // Out of cash
 
-    // Skip if market is too old (already missed the window)
-    // ... actually for short markets we want them all
-
-    // Check existing positions for this market
     const existing = await Position.find({ conditionId: market.conditionId, resolved: false }).exec();
     const existingByOutcome = new Set(existing.map((p) => p.outcomeIndex));
-    if (existingByOutcome.size === 2) return; // both sides already triggered
+    if (existingByOutcome.size === 2) return;
 
-    // Get latest prices from recent trades
     const trades = await fetchRecentTrades(market.conditionId);
     if (trades.length === 0) return;
 
-    // Track last price per outcome
     const lastPrice: Record<number, number> = { 0: -1, 1: -1 };
     for (const t of trades) {
         const idx = Number(t.outcomeIndex);
@@ -154,21 +204,20 @@ async function processMarket(market: any): Promise<void> {
         }
         if (lastPrice[0] !== -1 && lastPrice[1] !== -1) break;
     }
-
-    // Derive missing side from spread (sum to ~1)
     if (lastPrice[0] === -1 && lastPrice[1] !== -1) lastPrice[0] = Math.max(0.001, 1 - lastPrice[1]);
     if (lastPrice[1] === -1 && lastPrice[0] !== -1) lastPrice[1] = Math.max(0.001, 1 - lastPrice[0]);
 
-    const slippage = SLIPPAGE_BPS / 10000;
+    const slippage = session.slippageBps / 10000;
     const now = Math.floor(Date.now() / 1000);
 
     for (const sideIdx of [0, 1]) {
         if (existingByOutcome.has(sideIdx)) continue;
+        if (cashLeft.value < session.perBuyUSD) break;
         const price = lastPrice[sideIdx];
-        if (price <= 0 || price >= THRESHOLD_USD) continue;
+        if (price <= 0 || price >= session.threshold) continue;
 
         const fillPrice = Math.min(0.999, price * (1 + slippage));
-        const tokens = PER_BUY_USD / fillPrice;
+        const tokens = session.perBuyUSD / fillPrice;
         const outcome = market.outcomes[sideIdx] || (sideIdx === 0 ? 'Up' : 'Down');
 
         await Position.create({
@@ -182,10 +231,11 @@ async function processMarket(market: any): Promise<void> {
             triggerPrice: price,
             fillPrice,
             tokens,
-            costUSD: PER_BUY_USD,
+            costUSD: session.perBuyUSD,
             entryTimestamp: now,
             resolved: false,
         });
+        cashLeft.value -= session.perBuyUSD;
 
         Logger.info(
             `[DUAL-THRESHOLD] 🎯 BUY ${outcome} @ $${fillPrice.toFixed(3)} ` +
@@ -194,12 +244,9 @@ async function processMarket(market: any): Promise<void> {
     }
 }
 
-// === Resolve closed markets and compute P&L ===
 async function checkResolutions(): Promise<void> {
-    const Position = getModel();
+    const Position = getPositionModel();
     const unresolved = await Position.find({ resolved: false }).exec();
-
-    // Group by conditionId to batch resolution checks
     const conditionIds = Array.from(new Set(unresolved.map((p) => p.conditionId)));
 
     let resolvedCount = 0;
@@ -246,7 +293,6 @@ async function checkResolutions(): Promise<void> {
     }
 }
 
-// === Main service loop ===
 let isRunning = true;
 
 export const stopDualThresholdStrategy = (): void => {
@@ -255,34 +301,41 @@ export const stopDualThresholdStrategy = (): void => {
 
 const dualThresholdStrategy = async (): Promise<void> => {
     Logger.info('[DUAL-THRESHOLD] Service starting...');
-    Logger.info(
-        `[DUAL-THRESHOLD] Threshold=$${THRESHOLD_USD}, Per-buy=$${PER_BUY_USD}, ` +
-        `Slippage=${(SLIPPAGE_BPS / 100).toFixed(1)}%, Assets=${TARGET_ASSETS.join('/')}`
-    );
 
     let cycle = 0;
     while (isRunning) {
         cycle++;
         try {
-            // Every cycle: scan active markets and check for triggers
-            const markets = await fetchActiveMarkets();
-            const tradeable = markets.filter((m) => TARGET_ASSETS.includes(m.asset));
+            const session = await getSessionConfig();
+
+            if (!session.active) {
+                if (cycle % 12 === 0) {
+                    Logger.info('[DUAL-THRESHOLD] Session inactive — skipping');
+                }
+                await sleep(POLL_INTERVAL_MS);
+                continue;
+            }
+
+            const cashAvailable = await getCashBalance(session);
 
             if (cycle % 12 === 0) {
-                // Every minute: log heartbeat
                 Logger.info(
-                    `[DUAL-THRESHOLD] Heartbeat: monitoring ${tradeable.length} active ${TARGET_ASSETS.join('/')} markets`
+                    `[DUAL-THRESHOLD] Threshold=$${session.threshold} | Per-buy=$${session.perBuyUSD} | ` +
+                    `Cash=$${cashAvailable.toFixed(2)}/$${session.startingBalance} | Assets=${session.enabledAssets.join('/')}`
                 );
             }
 
-            // Process each market for potential triggers (parallel batches)
+            const markets = await fetchActiveMarkets();
+            const tradeable = markets.filter((m) => session.enabledAssets.includes(m.asset));
+
+            const cashLeft = { value: cashAvailable };
             const BATCH = 8;
             for (let i = 0; i < tradeable.length; i += BATCH) {
+                if (cashLeft.value < session.perBuyUSD) break;
                 const batch = tradeable.slice(i, i + BATCH);
-                await Promise.all(batch.map(processMarket));
+                await Promise.all(batch.map((m) => processMarket(m, session, cashLeft)));
             }
 
-            // Every 5th cycle (~25 sec): check for resolutions
             if (cycle % 5 === 0) {
                 await checkResolutions();
             }

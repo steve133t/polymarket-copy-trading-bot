@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { MongoClient } from 'mongodb';
 
 const MONGO_URI = process.env.MONGO_URI!;
+const SESSION_ID = 'default';
+
 let client: MongoClient | null = null;
 
 async function getDb() {
@@ -15,13 +17,39 @@ async function getDb() {
   return client.db();
 }
 
+const DEFAULT_SESSION = {
+  _id: SESSION_ID,
+  active: true,
+  startingBalance: 100,
+  threshold: 0.10,
+  perBuyUSD: 1.0,
+  slippageBps: 2000,
+  enabledAssets: ['BTC', 'SOL'],
+  startedAt: 0,
+};
+
 export async function GET() {
   try {
     const db = await getDb();
-    const col = db.collection('dual_threshold_positions');
+    const positionsCol = db.collection('dual_threshold_positions');
+    const sessionsCol = db.collection('dual_threshold_sessions');
 
-    const all = await col.find({}).sort({ entryTimestamp: -1 }).toArray();
+    // Use type assertion since we use string _id (custom convention)
+    const sessionsAny = sessionsCol as unknown as {
+      findOne: (filter: Record<string, unknown>) => Promise<Record<string, unknown> | null>;
+      insertOne: (doc: Record<string, unknown>) => Promise<unknown>;
+      updateOne: (filter: Record<string, unknown>, update: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<unknown>;
+      replaceOne: (filter: Record<string, unknown>, doc: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<unknown>;
+      deleteMany: (filter: Record<string, unknown>) => Promise<unknown>;
+    };
 
+    let session = await sessionsAny.findOne({ _id: SESSION_ID });
+    if (!session) {
+      session = { ...DEFAULT_SESSION, startedAt: Math.floor(Date.now() / 1000) };
+      await sessionsAny.insertOne(session);
+    }
+
+    const all = await positionsCol.find({}).sort({ entryTimestamp: -1 }).toArray();
     const open = all.filter((p) => !p.resolved);
     const resolved = all.filter((p) => p.resolved);
     const wins = resolved.filter((p) => (p.pnl || 0) > 0);
@@ -32,7 +60,28 @@ export async function GET() {
     const totalPayout = resolved.reduce((s, p) => s + (Number(p.payoutUSD) || 0), 0);
     const openCost = open.reduce((s, p) => s + (Number(p.costUSD) || 0), 0);
 
-    // Group open positions by market (conditionId) — show "both sides caught" jackpot setups
+    // Mark open positions to market — value held tokens at last fill price
+    // (no real-time price feed yet, so use entry price as proxy for marketValue)
+    const openMarketValue = open.reduce(
+      (s, p) => s + (Number(p.tokens) || 0) * (Number(p.fillPrice) || 0),
+      0
+    );
+
+    // Cash = startingBalance - sum(open costs) - sum(losing closed costs) + sum(winning closed payouts)
+    const cashBalance =
+      Number(session.startingBalance) -
+      open.reduce((s, p) => s + (Number(p.costUSD) || 0), 0) -
+      resolved.reduce((s, p) => s + (Number(p.costUSD) || 0), 0) +
+      resolved.reduce((s, p) => s + (Number(p.payoutUSD) || 0), 0);
+
+    const totalEquity = cashBalance + openMarketValue;
+    const totalPnl = totalEquity - Number(session.startingBalance);
+    const returnPct =
+      Number(session.startingBalance) > 0
+        ? (totalPnl / Number(session.startingBalance)) * 100
+        : 0;
+
+    // Group open positions by market — show both-sides-caught jackpot setups
     const openByMarket: Record<string, any[]> = {};
     for (const p of open) {
       const key = String(p.conditionId);
@@ -41,8 +90,10 @@ export async function GET() {
     }
     const bothSidesOpen = Object.values(openByMarket).filter((g) => g.length >= 2).length;
 
-    // Per-asset breakdown
-    const byAsset: Record<string, { positions: number; resolvedPnl: number; wins: number; losses: number; openCost: number }> = {};
+    const byAsset: Record<
+      string,
+      { positions: number; resolvedPnl: number; wins: number; losses: number; openCost: number }
+    > = {};
     for (const p of all) {
       const asset = String(p.asset || 'unknown');
       if (!byAsset[asset]) byAsset[asset] = { positions: 0, resolvedPnl: 0, wins: 0, losses: 0, openCost: 0 };
@@ -56,7 +107,6 @@ export async function GET() {
       }
     }
 
-    // Recent positions (50)
     const recent = all.slice(0, 50).map((p) => ({
       conditionId: p.conditionId,
       slug: p.slug,
@@ -74,7 +124,6 @@ export async function GET() {
       pnl: Number(p.pnl) || 0,
     }));
 
-    // Top winners and losers (by P&L)
     const topWinners = resolved
       .slice()
       .sort((a, b) => (Number(b.pnl) || 0) - (Number(a.pnl) || 0))
@@ -89,6 +138,15 @@ export async function GET() {
       }));
 
     return NextResponse.json({
+      session: {
+        active: Boolean(session.active),
+        startingBalance: Number(session.startingBalance) || 100,
+        threshold: Number(session.threshold) || 0.1,
+        perBuyUSD: Number(session.perBuyUSD) || 1,
+        slippageBps: Number(session.slippageBps) || 2000,
+        enabledAssets: Array.isArray(session.enabledAssets) ? session.enabledAssets : ['BTC', 'SOL'],
+        startedAt: Number(session.startedAt) || 0,
+      },
       summary: {
         totalPositions: all.length,
         openPositions: open.length,
@@ -96,17 +154,22 @@ export async function GET() {
         bothSidesOpenMarkets: bothSidesOpen,
         wins: wins.length,
         losses: losses.length,
-        winRate: wins.length + losses.length > 0
-          ? Number(((wins.length / (wins.length + losses.length)) * 100).toFixed(1))
-          : 0,
+        winRate:
+          wins.length + losses.length > 0
+            ? Number(((wins.length / (wins.length + losses.length)) * 100).toFixed(1))
+            : 0,
+        startingBalance: Number(session.startingBalance) || 100,
+        cashBalance: Number(cashBalance.toFixed(2)),
+        openMarketValue: Number(openMarketValue.toFixed(2)),
+        totalEquity: Number(totalEquity.toFixed(2)),
         totalCost: Number(totalCost.toFixed(2)),
         openCost: Number(openCost.toFixed(2)),
         totalPayout: Number(totalPayout.toFixed(2)),
         realizedPnl: Number(realizedPnl.toFixed(2)),
+        totalPnl: Number(totalPnl.toFixed(2)),
+        returnPct: Number(returnPct.toFixed(2)),
         roi: totalCost > 0 ? Number(((realizedPnl / totalCost) * 100).toFixed(1)) : 0,
-        evPerPosition: resolved.length > 0
-          ? Number((realizedPnl / resolved.length).toFixed(3))
-          : 0,
+        evPerPosition: resolved.length > 0 ? Number((realizedPnl / resolved.length).toFixed(3)) : 0,
       },
       byAsset: Object.entries(byAsset).map(([asset, data]) => ({
         asset,
@@ -114,9 +177,10 @@ export async function GET() {
         resolvedPnl: Number(data.resolvedPnl.toFixed(2)),
         wins: data.wins,
         losses: data.losses,
-        winRate: data.wins + data.losses > 0
-          ? Number(((data.wins / (data.wins + data.losses)) * 100).toFixed(1))
-          : 0,
+        winRate:
+          data.wins + data.losses > 0
+            ? Number(((data.wins / (data.wins + data.losses)) * 100).toFixed(1))
+            : 0,
         openCost: Number(data.openCost.toFixed(2)),
       })),
       recent,
@@ -125,6 +189,67 @@ export async function GET() {
   } catch (error) {
     return NextResponse.json(
       { error: `Failed to fetch dual-threshold stats: ${error instanceof Error ? error.message : error}` },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const action = String(body.action || 'update');
+    const db = await getDb();
+    const sessionsCol = db.collection('dual_threshold_sessions');
+    const positionsCol = db.collection('dual_threshold_positions');
+
+    const sessionsAny = sessionsCol as unknown as {
+      findOne: (filter: Record<string, unknown>) => Promise<Record<string, unknown> | null>;
+      updateOne: (filter: Record<string, unknown>, update: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<unknown>;
+      replaceOne: (filter: Record<string, unknown>, doc: Record<string, unknown>, opts?: Record<string, unknown>) => Promise<unknown>;
+    };
+
+    if (action === 'reset') {
+      await positionsCol.deleteMany({});
+      const fresh = {
+        _id: SESSION_ID,
+        active: true,
+        startingBalance: Number(body.startingBalance) || 100,
+        threshold: Number(body.threshold) || 0.1,
+        perBuyUSD: Number(body.perBuyUSD) || 1,
+        slippageBps: Number(body.slippageBps) || 2000,
+        enabledAssets: Array.isArray(body.enabledAssets) ? body.enabledAssets : ['BTC', 'SOL'],
+        startedAt: Math.floor(Date.now() / 1000),
+        updatedAt: new Date(),
+      };
+      await sessionsAny.replaceOne({ _id: SESSION_ID }, fresh, { upsert: true });
+      return NextResponse.json({ success: true, session: fresh, action: 'reset' });
+    }
+
+    const update: Record<string, unknown> = { updatedAt: new Date() };
+
+    if (action === 'start') update.active = true;
+    if (action === 'stop') update.active = false;
+
+    if (typeof body.active === 'boolean') update.active = body.active;
+    if (body.startingBalance !== undefined) update.startingBalance = Number(body.startingBalance);
+    if (body.threshold !== undefined) update.threshold = Number(body.threshold);
+    if (body.perBuyUSD !== undefined) update.perBuyUSD = Number(body.perBuyUSD);
+    if (body.slippageBps !== undefined) update.slippageBps = Number(body.slippageBps);
+    if (Array.isArray(body.enabledAssets)) update.enabledAssets = body.enabledAssets;
+
+    if (action === 'start') update.startedAt = Math.floor(Date.now() / 1000);
+
+    await sessionsAny.updateOne(
+      { _id: SESSION_ID },
+      { $set: update, $setOnInsert: { _id: SESSION_ID } },
+      { upsert: true }
+    );
+
+    const updated = await sessionsAny.findOne({ _id: SESSION_ID });
+    return NextResponse.json({ success: true, session: updated, action });
+  } catch (error) {
+    return NextResponse.json(
+      { error: `Failed to update session: ${error instanceof Error ? error.message : error}` },
       { status: 500 }
     );
   }
