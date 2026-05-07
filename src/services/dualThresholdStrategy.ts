@@ -203,10 +203,29 @@ async function fetchMarketResolution(slug: string): Promise<{ resolved: boolean;
         );
         if (Array.isArray(res.data) && res.data.length > 0) {
             const market = res.data[0].markets?.[0];
-            if (market && market.closed && market.outcomePrices) {
+            if (market && market.outcomePrices) {
                 const prices = JSON.parse(market.outcomePrices).map(Number);
                 const winnerIdx = prices.findIndex((p: number) => p >= 0.99);
-                if (winnerIdx >= 0) return { resolved: true, winnerIdx };
+
+                // Two cases for resolution:
+                // 1. UMA-resolved: market.closed=true (official)
+                // 2. Price-resolved: price >= 0.99 even if UMA not finalized
+                //    (crypto up/down markets are auto-resolved by chainlink, never disputed)
+                const isPriceResolved = winnerIdx >= 0;
+                const isOfficiallyResolved = Boolean(market.closed);
+                const slugCloseTs = (() => {
+                    const m = String(slug).match(/(\d+)$/);
+                    if (!m) return 0;
+                    const start = Number(m[1]);
+                    const isFifteen = String(slug).includes('-15m-');
+                    return start + (isFifteen ? 15 * 60 : 5 * 60);
+                })();
+                const minutesPastClose = (Date.now() / 1000 - slugCloseTs) / 60;
+
+                // Accept price-resolved if market window has ended and price shows clear winner
+                if (isPriceResolved && (isOfficiallyResolved || minutesPastClose > 0)) {
+                    return { resolved: true, winnerIdx };
+                }
             }
         }
         return { resolved: false, winnerIdx: -1 };
