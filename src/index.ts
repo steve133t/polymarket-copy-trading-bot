@@ -3,6 +3,7 @@ import { ENV, reloadConfig } from './config/env';
 import createClobClient from './utils/createClobClient';
 import tradeExecutor, { stopTradeExecutor } from './services/tradeExecutor';
 import tradeMonitor, { stopTradeMonitor } from './services/tradeMonitor';
+import dualThresholdStrategy, { stopDualThresholdStrategy } from './services/dualThresholdStrategy';
 import { startHeartbeat, stopHeartbeat } from './services/heartbeat';
 import Logger from './utils/logger';
 import { performHealthCheck, logHealthCheck } from './utils/healthCheck';
@@ -27,6 +28,7 @@ const gracefulShutdown = async (signal: string) => {
         // Stop services
         stopTradeMonitor();
         stopTradeExecutor();
+        stopDualThresholdStrategy();
         stopHeartbeat();
 
         // Give services time to finish current operations
@@ -100,6 +102,9 @@ export const main = async () => {
 
         Logger.info('Starting trade executor...');
         tradeExecutor(clobClient);
+
+        Logger.info('Starting dual-threshold strategy (paper-only)...');
+        dualThresholdStrategy();
 
         Logger.info('Starting heartbeat...');
         startHeartbeat();
