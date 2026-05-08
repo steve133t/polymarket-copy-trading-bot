@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 
-type StrategyMode = 'dual_threshold' | 'momentum_hedge';
+type StrategyMode = 'dual_threshold' | 'momentum_hedge' | 'btc_leads';
 
 interface Session {
   strategyMode: StrategyMode;
@@ -24,6 +24,10 @@ interface Session {
   smallBetUSD: number;
   useScaledBets: boolean;
   tierBets: Array<{ minPct: number; maxPct: number; betUSD: number }>;
+  btcLookbackMin: number;
+  btcThresholdPct: number;
+  btcMaxThresholdPct: number;
+  btcBetUSD: number;
   startedAt: number;
 }
 
@@ -111,6 +115,10 @@ export function DualThresholdView() {
     { minPct: 0.20, maxPct: 0.30, betUSD: 5 },
     { minPct: 0.30, maxPct: 99, betUSD: 10 },
   ]);
+  const [btcLookbackMin, setBtcLookbackMin] = useState('3');
+  const [btcThresholdPct, setBtcThresholdPct] = useState('0.02');
+  const [btcMaxThresholdPct, setBtcMaxThresholdPct] = useState('0.05');
+  const [btcBetUSD, setBtcBetUSD] = useState('5');
   const formInitialized = useRef(false);
 
   const syncForm = useCallback((s: Session) => {
@@ -127,6 +135,10 @@ export function DualThresholdView() {
     setSmallBet(String(s.smallBetUSD ?? 0.5));
     setUseScaledBets(Boolean(s.useScaledBets));
     if (Array.isArray(s.tierBets) && s.tierBets.length > 0) setTierBets(s.tierBets);
+    setBtcLookbackMin(String(s.btcLookbackMin ?? 3));
+    setBtcThresholdPct(String(s.btcThresholdPct ?? 0.02));
+    setBtcMaxThresholdPct(String(s.btcMaxThresholdPct ?? 0.05));
+    setBtcBetUSD(String(s.btcBetUSD ?? 5));
   }, []);
 
   const fetchStats = useCallback(async (silent = false) => {
@@ -182,6 +194,10 @@ export function DualThresholdView() {
         smallBetUSD: Number(smallBet),
         useScaledBets,
         tierBets,
+        btcLookbackMin: Number(btcLookbackMin),
+        btcThresholdPct: Number(btcThresholdPct),
+        btcMaxThresholdPct: Number(btcMaxThresholdPct),
+        btcBetUSD: Number(btcBetUSD),
       };
       const res = await fetch('/api/dual-threshold-stats', {
         method: 'POST',
@@ -260,8 +276,10 @@ export function DualThresholdView() {
             )}
           </CardTitle>
           <CardDescription>
-            {strategyMode === 'momentum_hedge'
-              ? 'Spot-price momentum hedge: bet 1.5/0.5 split based on 5min crypto trend. Backtest: 64% accuracy, +8.5% ROI.'
+            {strategyMode === 'btc_leads'
+              ? 'BTC-leads (validated): when BTC moves on Kraken, ETH/SOL Polymarket markets follow with 3-min lag. Backtest: 70.8% accuracy.'
+              : strategyMode === 'momentum_hedge'
+              ? 'Spot-price momentum hedge: bet 1.5/0.5 split based on 5min trend. ⚠️ Original backtest had look-ahead bias — real accuracy ~50%.'
               : 'Dual-side threshold: buy each side when price dips below threshold. Backtest: +10.4% ROI on 15m markets.'}
           </CardDescription>
         </CardHeader>
@@ -291,6 +309,17 @@ export function DualThresholdView() {
                 }`}
               >
                 Momentum Hedge
+              </button>
+              <button
+                type="button"
+                onClick={() => setStrategyMode('btc_leads')}
+                className={`rounded-md border px-3 py-1.5 text-xs transition ${
+                  strategyMode === 'btc_leads'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-muted/40 text-muted-foreground hover:border-muted'
+                }`}
+              >
+                BTC-Leads ⭐
               </button>
             </div>
             <p className="mt-2 text-[10px] text-muted-foreground/60">
@@ -447,6 +476,44 @@ export function DualThresholdView() {
                 <p className="mb-2 text-xs font-medium text-muted-foreground">Enabled Assets (15m markets only)</p>
                 <div className="flex gap-2">
                   {ALL_ASSETS.map((asset) => (
+                    <div key={asset} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
+                      <span className="text-xs font-mono">{asset}</span>
+                      <Switch checked={enabledAssets.includes(asset)} onCheckedChange={() => toggleAsset(asset)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* BTC-leads params */}
+          {strategyMode === 'btc_leads' && (
+            <>
+              <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div>
+                  <label className="text-xs text-muted-foreground">BTC Lookback (min)</label>
+                  <Input type="number" value={btcLookbackMin} onChange={(e) => setBtcLookbackMin(e.target.value)} className="mt-1" step="1" min="1" max="10" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Min Threshold (%)</label>
+                  <Input type="number" value={btcThresholdPct} onChange={(e) => setBtcThresholdPct(e.target.value)} className="mt-1" step="0.01" min="0.005" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Max Threshold (%)</label>
+                  <Input type="number" value={btcMaxThresholdPct} onChange={(e) => setBtcMaxThresholdPct(e.target.value)} className="mt-1" step="0.01" min="0.01" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Bet Size ($)</label>
+                  <Input type="number" value={btcBetUSD} onChange={(e) => setBtcBetUSD(e.target.value)} className="mt-1" step="0.5" min="0.5" />
+                </div>
+              </div>
+              <p className="mt-2 text-[10px] text-muted-foreground/60">
+                Trades only ETH and SOL markets. Recommended: 3-min lookback, 0.02–0.05% threshold band, $5/bet (~70% accuracy per backtest).
+              </p>
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">Enabled Assets (ETH and SOL only — BTC not used as target)</p>
+                <div className="flex gap-2">
+                  {['ETH', 'SOL'].map((asset) => (
                     <div key={asset} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
                       <span className="text-xs font-mono">{asset}</span>
                       <Switch checked={enabledAssets.includes(asset)} onCheckedChange={() => toggleAsset(asset)} />

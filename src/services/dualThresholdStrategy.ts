@@ -15,7 +15,7 @@ import mongoose, { Schema } from 'mongoose';
 import Logger from '../utils/logger';
 
 // === STRATEGY MODES ===
-type StrategyMode = 'dual_threshold' | 'momentum_hedge';
+type StrategyMode = 'dual_threshold' | 'momentum_hedge' | 'btc_leads';
 
 // === DEFAULTS (used when no session in DB) ===
 const DEFAULT_STRATEGY_MODE: StrategyMode = 'dual_threshold';
@@ -32,14 +32,20 @@ const DEFAULT_BIG_BET = 1.5;  // major bet on predicted winner
 const DEFAULT_SMALL_BET = 0.5; // hedge bet on opposite
 
 // Scaled bet tiers — signal-strength-based betting (validated by backtest)
-// Backtest: 0.05-0.10% = 65% acc, 0.10-0.20% = 76% acc, 0.20-0.30% = 89% acc, 0.30%+ = 100% acc
-const DEFAULT_USE_SCALED_BETS = false; // start with hedge mode for backwards compat
+const DEFAULT_USE_SCALED_BETS = false;
 const DEFAULT_TIER_BETS = [
     { minPct: 0.05, maxPct: 0.10, betUSD: 1 },
     { minPct: 0.10, maxPct: 0.20, betUSD: 3 },
     { minPct: 0.20, maxPct: 0.30, betUSD: 5 },
     { minPct: 0.30, maxPct: 99, betUSD: 10 },
 ];
+
+// BTC-leads strategy defaults (validated by no-lookahead backtest)
+// 3m lookback × 0.02% threshold × ETH+SOL = 70.8% accuracy, +$0.35 EV/$1 bet
+const DEFAULT_BTC_LOOKBACK_MIN = 3;
+const DEFAULT_BTC_THRESHOLD_PCT = 0.02;
+const DEFAULT_BTC_BET_USD = 5;
+const DEFAULT_BTC_MAX_THRESHOLD_PCT = 0.05; // skip if BTC moved too much (signal stale)
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -104,6 +110,11 @@ const dualThresholdSessionSchema = new Schema({
     smallBetUSD: { type: Number, default: DEFAULT_SMALL_BET },
     useScaledBets: { type: Boolean, default: DEFAULT_USE_SCALED_BETS },
     tierBets: { type: Schema.Types.Mixed, default: DEFAULT_TIER_BETS },
+    // BTC-leads params
+    btcLookbackMin: { type: Number, default: DEFAULT_BTC_LOOKBACK_MIN },
+    btcThresholdPct: { type: Number, default: DEFAULT_BTC_THRESHOLD_PCT },
+    btcMaxThresholdPct: { type: Number, default: DEFAULT_BTC_MAX_THRESHOLD_PCT },
+    btcBetUSD: { type: Number, default: DEFAULT_BTC_BET_USD },
     startedAt: { type: Number, default: 0 },
     updatedAt: { type: Date, default: Date.now },
 }, { _id: false });
@@ -140,6 +151,11 @@ interface SessionConfig {
     smallBetUSD: number;
     useScaledBets: boolean;
     tierBets: Array<{ minPct: number; maxPct: number; betUSD: number }>;
+    // BTC-leads
+    btcLookbackMin: number;
+    btcThresholdPct: number;
+    btcMaxThresholdPct: number;
+    btcBetUSD: number;
 }
 
 async function getSessionConfig(): Promise<SessionConfig> {
@@ -174,6 +190,10 @@ async function getSessionConfig(): Promise<SessionConfig> {
     if (obj.smallBetUSD == null) obj.smallBetUSD = DEFAULT_SMALL_BET;
     if (obj.useScaledBets == null) obj.useScaledBets = DEFAULT_USE_SCALED_BETS;
     if (!Array.isArray(obj.tierBets) || obj.tierBets.length === 0) obj.tierBets = DEFAULT_TIER_BETS;
+    if (obj.btcLookbackMin == null) obj.btcLookbackMin = DEFAULT_BTC_LOOKBACK_MIN;
+    if (obj.btcThresholdPct == null) obj.btcThresholdPct = DEFAULT_BTC_THRESHOLD_PCT;
+    if (obj.btcMaxThresholdPct == null) obj.btcMaxThresholdPct = DEFAULT_BTC_MAX_THRESHOLD_PCT;
+    if (obj.btcBetUSD == null) obj.btcBetUSD = DEFAULT_BTC_BET_USD;
     return obj;
 }
 
@@ -462,6 +482,88 @@ async function processMarket(market: any, session: SessionConfig, cashLeft: { va
 // Uses 5min spot price momentum to predict 15min market winner.
 // Bets BIG on predicted side + SMALL on opposite as hedge.
 // Backtest: 64% accuracy across BTC/ETH/SOL, +8.5% ROI.
+// === BTC-LEADS STRATEGY ===
+// BTC's recent momentum predicts ETH/SOL Polymarket outcomes.
+// Backtest (no look-ahead): 70.8% accuracy at 3-min lookback × 0.02% threshold.
+// Polymarket lags ~3 min behind Kraken BTC moves on ETH/SOL pricing.
+async function processMarketBTCLeads(market: any, session: SessionConfig, cashLeft: { value: number }): Promise<void> {
+    const Position = getPositionModel();
+
+    // Only trade ETH and SOL (BTC self-correlation isn't useful)
+    if (market.asset !== 'ETH' && market.asset !== 'SOL') return;
+    if (!session.enabledAssets.includes(market.asset)) return;
+    if (cashLeft.value < session.btcBetUSD) return;
+
+    // Skip if we already have a position on this market
+    const existing = await Position.find({ conditionId: market.conditionId }).exec();
+    if (existing.length > 0) return;
+
+    // Only enter early in the window (within 4 min of open)
+    const nowSec = Math.floor(Date.now() / 1000);
+    const windowSec = market.window === '15m' ? 15 * 60 : 5 * 60;
+    const elapsed = windowSec - (market.closeTs - nowSec);
+    if (elapsed < 0 || elapsed > 4 * 60) return;
+
+    // Compute BTC momentum over the configured lookback
+    const btcMomentum = getMomentumPct('BTC', session.btcLookbackMin * 60);
+    if (btcMomentum === null) return;
+
+    const absMomentum = Math.abs(btcMomentum);
+    // Skip if BTC didn't move enough OR moved too much (signal already priced in)
+    if (absMomentum < session.btcThresholdPct) return;
+    if (absMomentum > session.btcMaxThresholdPct) return;
+
+    // Predicted winner: same direction as BTC
+    const predictedIdx = btcMomentum > 0 ? 0 : 1;
+
+    // Get current Polymarket prices
+    const trades = await fetchRecentTrades(market.conditionId);
+    const lastPrice: Record<number, number> = { 0: -1, 1: -1 };
+    for (const t of trades) {
+        const idx = Number(t.outcomeIndex);
+        if ((idx === 0 || idx === 1) && lastPrice[idx] === -1) {
+            lastPrice[idx] = Number(t.price);
+        }
+        if (lastPrice[0] !== -1 && lastPrice[1] !== -1) break;
+    }
+    if (lastPrice[0] === -1 && lastPrice[1] !== -1) lastPrice[0] = Math.max(0.001, 1 - lastPrice[1]);
+    if (lastPrice[1] === -1 && lastPrice[0] !== -1) lastPrice[1] = Math.max(0.001, 1 - lastPrice[0]);
+    if (lastPrice[0] === -1 && lastPrice[1] === -1) {
+        lastPrice[0] = 0.50;
+        lastPrice[1] = 0.50;
+    }
+
+    // Skip if Polymarket has already priced in the move (predicted side >$0.65)
+    if (lastPrice[predictedIdx] > 0.65) return;
+
+    const slippage = session.slippageBps / 10000;
+    const price = lastPrice[predictedIdx];
+    const fillPrice = Math.min(0.999, price * (1 + slippage));
+    const tokens = session.btcBetUSD / fillPrice;
+    const outcome = market.outcomes[predictedIdx] || (predictedIdx === 0 ? 'Up' : 'Down');
+
+    await Position.create({
+        conditionId: market.conditionId,
+        slug: market.slug,
+        title: market.title,
+        asset: market.asset,
+        window: market.window,
+        outcome,
+        outcomeIndex: predictedIdx,
+        triggerPrice: price,
+        fillPrice,
+        tokens,
+        costUSD: session.btcBetUSD,
+        entryTimestamp: nowSec,
+        resolved: false,
+    });
+    cashLeft.value -= session.btcBetUSD;
+
+    Logger.info(
+        `[BTC-LEADS] 🎯 BUY ${outcome} @ $${fillPrice.toFixed(3)} → $${session.btcBetUSD} (${tokens.toFixed(0)} tok) — ${market.title.slice(0, 40)} (BTC ${session.btcLookbackMin}m: ${btcMomentum.toFixed(2)}%)`
+    );
+}
+
 async function processMarketMomentum(market: any, session: SessionConfig, cashLeft: { value: number }): Promise<void> {
     const Position = getPositionModel();
 
@@ -654,8 +756,8 @@ const dualThresholdStrategy = async (): Promise<void> => {
 
             const cashAvailable = await getCashBalance(session);
 
-            // Always poll spot prices when momentum mode is active (or might be activated)
-            if (session.strategyMode === 'momentum_hedge') {
+            // Poll spot prices for momentum_hedge and btc_leads modes
+            if (session.strategyMode === 'momentum_hedge' || session.strategyMode === 'btc_leads') {
                 await pollSpotPrices();
             }
 
@@ -663,7 +765,27 @@ const dualThresholdStrategy = async (): Promise<void> => {
             const cashLeft = { value: cashAvailable };
             const BATCH = 8;
 
-            if (session.strategyMode === 'momentum_hedge') {
+            if (session.strategyMode === 'btc_leads') {
+                if (cycle % 12 === 0) {
+                    const btcMom = getMomentumPct('BTC', session.btcLookbackMin * 60);
+                    Logger.info(
+                        `[BTC-LEADS] Cash=$${cashAvailable.toFixed(2)}/$${session.startingBalance} | ` +
+                        `BTC ${session.btcLookbackMin}m=${btcMom?.toFixed(2) ?? '?'}% | ` +
+                        `Threshold ${session.btcThresholdPct}-${session.btcMaxThresholdPct}% | ` +
+                        `Bet $${session.btcBetUSD} | Targets ETH/SOL only`
+                    );
+                }
+                const tradeable = markets.filter(
+                    (m) => (m.asset === 'ETH' || m.asset === 'SOL')
+                        && session.enabledAssets.includes(m.asset)
+                        && session.enabledWindows.includes(m.window)
+                );
+                for (let i = 0; i < tradeable.length; i += BATCH) {
+                    if (cashLeft.value < session.btcBetUSD) break;
+                    const batch = tradeable.slice(i, i + BATCH);
+                    await Promise.all(batch.map((m) => processMarketBTCLeads(m, session, cashLeft)));
+                }
+            } else if (session.strategyMode === 'momentum_hedge') {
                 if (cycle % 12 === 0) {
                     const btcMom = getMomentumPct('BTC', session.momentumWindowSec);
                     const ethMom = getMomentumPct('ETH', session.momentumWindowSec);

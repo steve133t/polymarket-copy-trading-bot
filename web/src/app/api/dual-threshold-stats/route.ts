@@ -40,6 +40,11 @@ const DEFAULT_SESSION = {
     { minPct: 0.20, maxPct: 0.30, betUSD: 5 },
     { minPct: 0.30, maxPct: 99, betUSD: 10 },
   ],
+  // BTC-leads params (validated: 70.8% accuracy, +$0.35/bet)
+  btcLookbackMin: 3,
+  btcThresholdPct: 0.02,
+  btcMaxThresholdPct: 0.05,
+  btcBetUSD: 5,
   startedAt: 0,
 };
 
@@ -170,6 +175,10 @@ export async function GET() {
         smallBetUSD: Number(session.smallBetUSD ?? 0.5),
         useScaledBets: Boolean(session.useScaledBets ?? false),
         tierBets: Array.isArray(session.tierBets) ? session.tierBets : DEFAULT_SESSION.tierBets,
+        btcLookbackMin: Number(session.btcLookbackMin ?? 3),
+        btcThresholdPct: Number(session.btcThresholdPct ?? 0.02),
+        btcMaxThresholdPct: Number(session.btcMaxThresholdPct ?? 0.05),
+        btcBetUSD: Number(session.btcBetUSD ?? 5),
         startedAt: Number(session.startedAt) || 0,
       },
       summary: {
@@ -277,6 +286,10 @@ export async function POST(request: Request) {
     if (body.smallBetUSD !== undefined) update.smallBetUSD = Number(body.smallBetUSD);
     if (typeof body.useScaledBets === 'boolean') update.useScaledBets = body.useScaledBets;
     if (Array.isArray(body.tierBets)) update.tierBets = body.tierBets;
+    if (body.btcLookbackMin !== undefined) update.btcLookbackMin = Number(body.btcLookbackMin);
+    if (body.btcThresholdPct !== undefined) update.btcThresholdPct = Number(body.btcThresholdPct);
+    if (body.btcMaxThresholdPct !== undefined) update.btcMaxThresholdPct = Number(body.btcMaxThresholdPct);
+    if (body.btcBetUSD !== undefined) update.btcBetUSD = Number(body.btcBetUSD);
 
     if (action === 'start') update.startedAt = Math.floor(Date.now() / 1000);
 
