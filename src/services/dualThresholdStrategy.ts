@@ -27,9 +27,19 @@ const DEFAULT_ASSETS = ['BTC', 'ETH', 'SOL'];
 const DEFAULT_WINDOWS = ['15m'];
 // Momentum hedge defaults — backtest showed 64% accuracy at these settings
 const DEFAULT_MOMENTUM_WINDOW_SEC = 300; // 5 min spot price lookback
-const DEFAULT_MOMENTUM_THRESHOLD_PCT = 0.10; // % change required to take a bet
+const DEFAULT_MOMENTUM_THRESHOLD_PCT = 0.05; // % change required to take a bet (lower = more fires)
 const DEFAULT_BIG_BET = 1.5;  // major bet on predicted winner
 const DEFAULT_SMALL_BET = 0.5; // hedge bet on opposite
+
+// Scaled bet tiers — signal-strength-based betting (validated by backtest)
+// Backtest: 0.05-0.10% = 65% acc, 0.10-0.20% = 76% acc, 0.20-0.30% = 89% acc, 0.30%+ = 100% acc
+const DEFAULT_USE_SCALED_BETS = false; // start with hedge mode for backwards compat
+const DEFAULT_TIER_BETS = [
+    { minPct: 0.05, maxPct: 0.10, betUSD: 1 },
+    { minPct: 0.10, maxPct: 0.20, betUSD: 3 },
+    { minPct: 0.20, maxPct: 0.30, betUSD: 5 },
+    { minPct: 0.30, maxPct: 99, betUSD: 10 },
+];
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -92,6 +102,8 @@ const dualThresholdSessionSchema = new Schema({
     momentumThresholdPct: { type: Number, default: DEFAULT_MOMENTUM_THRESHOLD_PCT },
     bigBetUSD: { type: Number, default: DEFAULT_BIG_BET },
     smallBetUSD: { type: Number, default: DEFAULT_SMALL_BET },
+    useScaledBets: { type: Boolean, default: DEFAULT_USE_SCALED_BETS },
+    tierBets: { type: Schema.Types.Mixed, default: DEFAULT_TIER_BETS },
     startedAt: { type: Number, default: 0 },
     updatedAt: { type: Date, default: Date.now },
 }, { _id: false });
@@ -126,6 +138,8 @@ interface SessionConfig {
     momentumThresholdPct: number;
     bigBetUSD: number;
     smallBetUSD: number;
+    useScaledBets: boolean;
+    tierBets: Array<{ minPct: number; maxPct: number; betUSD: number }>;
 }
 
 async function getSessionConfig(): Promise<SessionConfig> {
@@ -158,7 +172,17 @@ async function getSessionConfig(): Promise<SessionConfig> {
     if (obj.momentumThresholdPct == null) obj.momentumThresholdPct = DEFAULT_MOMENTUM_THRESHOLD_PCT;
     if (obj.bigBetUSD == null) obj.bigBetUSD = DEFAULT_BIG_BET;
     if (obj.smallBetUSD == null) obj.smallBetUSD = DEFAULT_SMALL_BET;
+    if (obj.useScaledBets == null) obj.useScaledBets = DEFAULT_USE_SCALED_BETS;
+    if (!Array.isArray(obj.tierBets) || obj.tierBets.length === 0) obj.tierBets = DEFAULT_TIER_BETS;
     return obj;
+}
+
+// Helper: pick bet size based on signal strength
+function getTierBet(absSignalPct: number, tiers: Array<{ minPct: number; maxPct: number; betUSD: number }>): number {
+    for (const tier of tiers) {
+        if (absSignalPct >= tier.minPct && absSignalPct < tier.maxPct) return tier.betUSD;
+    }
+    return 0;
 }
 
 // === Spot price fetching for momentum strategy ===
@@ -440,10 +464,11 @@ async function processMarket(market: any, session: SessionConfig, cashLeft: { va
 // Backtest: 64% accuracy across BTC/ETH/SOL, +8.5% ROI.
 async function processMarketMomentum(market: any, session: SessionConfig, cashLeft: { value: number }): Promise<void> {
     const Position = getPositionModel();
-    const totalBet = session.bigBetUSD + session.smallBetUSD;
 
     if (!session.enabledAssets.includes(market.asset)) return;
-    if (cashLeft.value < totalBet) return;
+    // For scaled bets we'll determine size after we have signal; just need at least $1
+    const minNeeded = session.useScaledBets ? 1 : (session.bigBetUSD + session.smallBetUSD);
+    if (cashLeft.value < minNeeded) return;
 
     // Only enter NEW markets — skip if any position exists
     const existing = await Position.find({ conditionId: market.conditionId }).exec();
@@ -491,15 +516,29 @@ async function processMarketMomentum(market: any, session: SessionConfig, cashLe
     if (lastPrice[0] < 0.25 || lastPrice[0] > 0.75) return;
 
     const slippage = session.slippageBps / 10000;
-    // Buy both sides — big on predicted, small on hedge
-    const sideAmount: Record<number, number> = {
-        [predictedIdx]: session.bigBetUSD,
-        [1 - predictedIdx]: session.smallBetUSD,
-    };
+
+    // Determine bet sizes based on mode
+    let sideAmount: Record<number, number>;
+    if (session.useScaledBets) {
+        // SCALED mode: bet size based on signal strength, NO hedge
+        const tierBet = getTierBet(Math.abs(momentumPct), session.tierBets);
+        if (tierBet <= 0 || cashLeft.value < tierBet) return;
+        sideAmount = {
+            [predictedIdx]: tierBet,
+            [1 - predictedIdx]: 0,
+        };
+    } else {
+        // FIXED hedge mode: big on predicted, small on hedge
+        sideAmount = {
+            [predictedIdx]: session.bigBetUSD,
+            [1 - predictedIdx]: session.smallBetUSD,
+        };
+    }
 
     for (const sideIdx of [0, 1]) {
         const amount = sideAmount[sideIdx];
         if (amount <= 0) continue;
+        if (cashLeft.value < amount) break;
         const price = lastPrice[sideIdx];
         const fillPrice = Math.min(0.999, price * (1 + slippage));
         const tokens = amount / fillPrice;
@@ -522,9 +561,9 @@ async function processMarketMomentum(market: any, session: SessionConfig, cashLe
         });
         cashLeft.value -= amount;
 
-        const role = sideIdx === predictedIdx ? 'PREDICTED' : 'HEDGE';
+        const role = session.useScaledBets ? 'SCALED' : (sideIdx === predictedIdx ? 'PREDICTED' : 'HEDGE');
         Logger.info(
-            `[MOMENTUM] 🎯 ${role} ${outcome} @ $${fillPrice.toFixed(3)} → ${tokens.toFixed(0)} tokens — ${market.title} (momentum ${momentumPct.toFixed(2)}%)`
+            `[MOMENTUM] 🎯 ${role} ${outcome} @ $${fillPrice.toFixed(3)} → $${amount} (${tokens.toFixed(0)} tok) — ${market.title.slice(0, 40)} (momentum ${momentumPct.toFixed(2)}%)`
         );
     }
 }

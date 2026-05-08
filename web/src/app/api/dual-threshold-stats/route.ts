@@ -30,9 +30,16 @@ const DEFAULT_SESSION = {
   enabledWindows: ['15m'],
   // momentum_hedge params (backtest: 64% accuracy, +8.5% ROI)
   momentumWindowSec: 300,
-  momentumThresholdPct: 0.10,
+  momentumThresholdPct: 0.05,
   bigBetUSD: 1.5,
   smallBetUSD: 0.5,
+  useScaledBets: false,
+  tierBets: [
+    { minPct: 0.05, maxPct: 0.10, betUSD: 1 },
+    { minPct: 0.10, maxPct: 0.20, betUSD: 3 },
+    { minPct: 0.20, maxPct: 0.30, betUSD: 5 },
+    { minPct: 0.30, maxPct: 99, betUSD: 10 },
+  ],
   startedAt: 0,
 };
 
@@ -158,9 +165,11 @@ export async function GET() {
           ? session.enabledWindows
           : ['15m'],
         momentumWindowSec: Number(session.momentumWindowSec) || 300,
-        momentumThresholdPct: Number(session.momentumThresholdPct ?? 0.10),
+        momentumThresholdPct: Number(session.momentumThresholdPct ?? 0.05),
         bigBetUSD: Number(session.bigBetUSD ?? 1.5),
         smallBetUSD: Number(session.smallBetUSD ?? 0.5),
+        useScaledBets: Boolean(session.useScaledBets ?? false),
+        tierBets: Array.isArray(session.tierBets) ? session.tierBets : DEFAULT_SESSION.tierBets,
         startedAt: Number(session.startedAt) || 0,
       },
       summary: {
@@ -266,6 +275,8 @@ export async function POST(request: Request) {
     if (body.momentumThresholdPct !== undefined) update.momentumThresholdPct = Number(body.momentumThresholdPct);
     if (body.bigBetUSD !== undefined) update.bigBetUSD = Number(body.bigBetUSD);
     if (body.smallBetUSD !== undefined) update.smallBetUSD = Number(body.smallBetUSD);
+    if (typeof body.useScaledBets === 'boolean') update.useScaledBets = body.useScaledBets;
+    if (Array.isArray(body.tierBets)) update.tierBets = body.tierBets;
 
     if (action === 'start') update.startedAt = Math.floor(Date.now() / 1000);
 
