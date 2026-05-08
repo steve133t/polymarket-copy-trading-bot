@@ -14,28 +14,40 @@ import axios from 'axios';
 import mongoose, { Schema } from 'mongoose';
 import Logger from '../utils/logger';
 
+// === STRATEGY MODES ===
+type StrategyMode = 'dual_threshold' | 'momentum_hedge';
+
 // === DEFAULTS (used when no session in DB) ===
+const DEFAULT_STRATEGY_MODE: StrategyMode = 'dual_threshold';
 const DEFAULT_THRESHOLD = 0.10;
 const DEFAULT_PER_BUY = 1.0;
 const DEFAULT_SLIPPAGE_BPS = 2000; // 20%
 const DEFAULT_STARTING_BALANCE = 100;
-// All assets work well on 15m (BTC +295%, ETH +161%, SOL +1130% ROI). Default to all.
 const DEFAULT_ASSETS = ['BTC', 'ETH', 'SOL'];
-// Default to 15m only since it's ~50x more profitable than 5m per backtest
 const DEFAULT_WINDOWS = ['15m'];
+// Momentum hedge defaults — backtest showed 64% accuracy at these settings
+const DEFAULT_MOMENTUM_WINDOW_SEC = 300; // 5 min spot price lookback
+const DEFAULT_MOMENTUM_THRESHOLD_PCT = 0.10; // % change required to take a bet
+const DEFAULT_BIG_BET = 1.5;  // major bet on predicted winner
+const DEFAULT_SMALL_BET = 0.5; // hedge bet on opposite
 
-const POLL_INTERVAL_MS = 3000; // Tighter polling so we don't miss last-second price dips
+const POLL_INTERVAL_MS = 3000;
 
-// All available crypto series
-// 15m windows are dramatically more profitable (~50x EV) than 5m per backtest
 const ACTIVE_SERIES = [
     { id: 10684, asset: 'BTC', window: '5m' },
     { id: 10683, asset: 'ETH', window: '5m' },
     { id: 10686, asset: 'SOL', window: '5m' },
     { id: 10192, asset: 'BTC', window: '15m' },
     { id: 10191, asset: 'ETH', window: '15m' },
-    { id: 10423, asset: 'SOL', window: '15m' }, // Best EV per backtest: +$13.42/market
+    { id: 10423, asset: 'SOL', window: '15m' },
 ];
+
+// Coinbase symbols for spot price (used by momentum strategy)
+const SPOT_SYMBOLS: Record<string, string> = {
+    BTC: 'BTC-USD',
+    ETH: 'ETH-USD',
+    SOL: 'SOL-USD',
+};
 
 // === MongoDB schemas ===
 const dualThresholdPositionSchema = new Schema({
@@ -61,13 +73,20 @@ dualThresholdPositionSchema.index({ resolved: 1, conditionId: 1 });
 
 const dualThresholdSessionSchema = new Schema({
     _id: { type: String, default: 'default' },
+    strategyMode: { type: String, default: DEFAULT_STRATEGY_MODE },
     active: { type: Boolean, default: true },
     startingBalance: { type: Number, default: DEFAULT_STARTING_BALANCE },
+    // Dual-threshold params
     threshold: { type: Number, default: DEFAULT_THRESHOLD },
     perBuyUSD: { type: Number, default: DEFAULT_PER_BUY },
     slippageBps: { type: Number, default: DEFAULT_SLIPPAGE_BPS },
     enabledAssets: { type: [String], default: DEFAULT_ASSETS },
     enabledWindows: { type: [String], default: DEFAULT_WINDOWS },
+    // Momentum-hedge params
+    momentumWindowSec: { type: Number, default: DEFAULT_MOMENTUM_WINDOW_SEC },
+    momentumThresholdPct: { type: Number, default: DEFAULT_MOMENTUM_THRESHOLD_PCT },
+    bigBetUSD: { type: Number, default: DEFAULT_BIG_BET },
+    smallBetUSD: { type: Number, default: DEFAULT_SMALL_BET },
     startedAt: { type: Number, default: 0 },
     updatedAt: { type: Date, default: Date.now },
 }, { _id: false });
@@ -88,22 +107,29 @@ const getSessionModel = () =>
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface SessionConfig {
+    strategyMode: StrategyMode;
     active: boolean;
     startingBalance: number;
+    // Dual-threshold
     threshold: number;
     perBuyUSD: number;
     slippageBps: number;
     enabledAssets: string[];
     enabledWindows: string[];
+    // Momentum hedge
+    momentumWindowSec: number;
+    momentumThresholdPct: number;
+    bigBetUSD: number;
+    smallBetUSD: number;
 }
 
 async function getSessionConfig(): Promise<SessionConfig> {
     const Session = getSessionModel();
     const doc = await Session.findOne({ _id: SESSION_ID }).exec();
     if (!doc) {
-        // Create default session
         const newDoc = await Session.create({
             _id: SESSION_ID,
+            strategyMode: DEFAULT_STRATEGY_MODE,
             active: true,
             startingBalance: DEFAULT_STARTING_BALANCE,
             threshold: DEFAULT_THRESHOLD,
@@ -111,16 +137,60 @@ async function getSessionConfig(): Promise<SessionConfig> {
             slippageBps: DEFAULT_SLIPPAGE_BPS,
             enabledAssets: DEFAULT_ASSETS,
             enabledWindows: DEFAULT_WINDOWS,
+            momentumWindowSec: DEFAULT_MOMENTUM_WINDOW_SEC,
+            momentumThresholdPct: DEFAULT_MOMENTUM_THRESHOLD_PCT,
+            bigBetUSD: DEFAULT_BIG_BET,
+            smallBetUSD: DEFAULT_SMALL_BET,
             startedAt: Math.floor(Date.now() / 1000),
         });
         return newDoc.toObject() as SessionConfig;
     }
     const obj = doc.toObject() as SessionConfig;
-    // Backfill if old session doesn't have enabledWindows
-    if (!Array.isArray(obj.enabledWindows) || obj.enabledWindows.length === 0) {
-        obj.enabledWindows = DEFAULT_WINDOWS;
-    }
+    // Backfill defaults for missing fields
+    if (!obj.strategyMode) obj.strategyMode = DEFAULT_STRATEGY_MODE;
+    if (!Array.isArray(obj.enabledWindows) || obj.enabledWindows.length === 0) obj.enabledWindows = DEFAULT_WINDOWS;
+    if (!obj.momentumWindowSec) obj.momentumWindowSec = DEFAULT_MOMENTUM_WINDOW_SEC;
+    if (obj.momentumThresholdPct == null) obj.momentumThresholdPct = DEFAULT_MOMENTUM_THRESHOLD_PCT;
+    if (obj.bigBetUSD == null) obj.bigBetUSD = DEFAULT_BIG_BET;
+    if (obj.smallBetUSD == null) obj.smallBetUSD = DEFAULT_SMALL_BET;
     return obj;
+}
+
+// === Spot price fetching for momentum strategy ===
+interface PriceCache { ts: number; price: number; }
+const spotPriceHistory: Record<string, PriceCache[]> = { BTC: [], ETH: [], SOL: [] };
+const SPOT_HISTORY_MAX_SEC = 600; // Keep 10 min of history
+
+async function pollSpotPrices(): Promise<void> {
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const [asset, symbol] of Object.entries(SPOT_SYMBOLS)) {
+        try {
+            // Coinbase ticker — current price
+            const res = await axios.get(
+                `https://api.exchange.coinbase.com/products/${symbol}/ticker`,
+                { timeout: 5000 }
+            );
+            const price = Number(res.data?.price) || 0;
+            if (price > 0) {
+                spotPriceHistory[asset].push({ ts: nowSec, price });
+                // Trim old entries
+                spotPriceHistory[asset] = spotPriceHistory[asset].filter(p => nowSec - p.ts < SPOT_HISTORY_MAX_SEC);
+            }
+        } catch {
+            // skip
+        }
+    }
+}
+
+function getMomentumPct(asset: string, lookbackSec: number): number | null {
+    const history = spotPriceHistory[asset];
+    if (!history || history.length < 2) return null;
+    const nowSec = history[history.length - 1].ts;
+    const lookbackTs = nowSec - lookbackSec;
+    const past = history.find(p => p.ts >= lookbackTs);
+    if (!past) return null;
+    const current = history[history.length - 1].price;
+    return ((current - past.price) / past.price) * 100;
 }
 
 async function getCashBalance(session: SessionConfig): Promise<number> {
@@ -296,6 +366,95 @@ async function processMarket(market: any, session: SessionConfig, cashLeft: { va
     }
 }
 
+// === MOMENTUM HEDGE STRATEGY ===
+// Uses 5min spot price momentum to predict 15min market winner.
+// Bets BIG on predicted side + SMALL on opposite as hedge.
+// Backtest: 64% accuracy across BTC/ETH/SOL, +8.5% ROI.
+async function processMarketMomentum(market: any, session: SessionConfig, cashLeft: { value: number }): Promise<void> {
+    const Position = getPositionModel();
+    const totalBet = session.bigBetUSD + session.smallBetUSD;
+
+    if (!session.enabledAssets.includes(market.asset)) return;
+    if (cashLeft.value < totalBet) return;
+
+    // Only enter NEW markets — skip if any position exists
+    const existing = await Position.find({ conditionId: market.conditionId }).exec();
+    if (existing.length > 0) return;
+
+    // Only enter markets that are still early in their window
+    // (we want fresh markets near $0.50/$0.50, not late-stage ones)
+    const nowSec = Math.floor(Date.now() / 1000);
+    const windowSec = market.window === '15m' ? 15 * 60 : 5 * 60;
+    const closeTs = market.closeTs;
+    const elapsed = windowSec - (closeTs - nowSec);
+    // Wait 60s into the window so spot momentum reflects real activity, but don't enter past 4 min in
+    if (elapsed < 60 || elapsed > 4 * 60) return;
+
+    // Compute momentum signal
+    const momentumPct = getMomentumPct(market.asset, session.momentumWindowSec);
+    if (momentumPct === null) return;
+    if (Math.abs(momentumPct) < session.momentumThresholdPct) return;
+
+    // Predicted winner: Up if momentum positive, Down if negative
+    const predictedIdx = momentumPct > 0 ? 0 : 1;
+
+    // Get current Polymarket prices for both sides
+    const trades = await fetchRecentTrades(market.conditionId);
+    if (trades.length === 0) return;
+
+    const lastPrice: Record<number, number> = { 0: -1, 1: -1 };
+    for (const t of trades) {
+        const idx = Number(t.outcomeIndex);
+        if ((idx === 0 || idx === 1) && lastPrice[idx] === -1) {
+            lastPrice[idx] = Number(t.price);
+        }
+        if (lastPrice[0] !== -1 && lastPrice[1] !== -1) break;
+    }
+    if (lastPrice[0] === -1 && lastPrice[1] !== -1) lastPrice[0] = Math.max(0.001, 1 - lastPrice[1]);
+    if (lastPrice[1] === -1 && lastPrice[0] !== -1) lastPrice[1] = Math.max(0.001, 1 - lastPrice[0]);
+
+    // Only bet if both prices are in 0.30-0.70 range (still uncertain market)
+    if (lastPrice[0] < 0.30 || lastPrice[0] > 0.70) return;
+
+    const slippage = session.slippageBps / 10000;
+    // Buy both sides — big on predicted, small on hedge
+    const sideAmount: Record<number, number> = {
+        [predictedIdx]: session.bigBetUSD,
+        [1 - predictedIdx]: session.smallBetUSD,
+    };
+
+    for (const sideIdx of [0, 1]) {
+        const amount = sideAmount[sideIdx];
+        if (amount <= 0) continue;
+        const price = lastPrice[sideIdx];
+        const fillPrice = Math.min(0.999, price * (1 + slippage));
+        const tokens = amount / fillPrice;
+        const outcome = market.outcomes[sideIdx] || (sideIdx === 0 ? 'Up' : 'Down');
+
+        await Position.create({
+            conditionId: market.conditionId,
+            slug: market.slug,
+            title: market.title,
+            asset: market.asset,
+            window: market.window,
+            outcome,
+            outcomeIndex: sideIdx,
+            triggerPrice: price,
+            fillPrice,
+            tokens,
+            costUSD: amount,
+            entryTimestamp: nowSec,
+            resolved: false,
+        });
+        cashLeft.value -= amount;
+
+        const role = sideIdx === predictedIdx ? 'PREDICTED' : 'HEDGE';
+        Logger.info(
+            `[MOMENTUM] 🎯 ${role} ${outcome} @ $${fillPrice.toFixed(3)} → ${tokens.toFixed(0)} tokens — ${market.title} (momentum ${momentumPct.toFixed(2)}%)`
+        );
+    }
+}
+
 async function checkResolutions(): Promise<void> {
     const Position = getPositionModel();
     const unresolved = await Position.find({ resolved: false }).exec();
@@ -367,7 +526,7 @@ const dualThresholdStrategy = async (): Promise<void> => {
 
             if (!session.active) {
                 if (cycle % 12 === 0) {
-                    Logger.info('[DUAL-THRESHOLD] Session inactive — skipping');
+                    Logger.info(`[STRATEGY:${session.strategyMode}] Session inactive — skipping`);
                 }
                 await sleep(POLL_INTERVAL_MS);
                 continue;
@@ -375,39 +534,63 @@ const dualThresholdStrategy = async (): Promise<void> => {
 
             const cashAvailable = await getCashBalance(session);
 
-            if (cycle % 12 === 0) {
-                Logger.info(
-                    `[DUAL-THRESHOLD] Threshold=$${session.threshold} | Per-buy=$${session.perBuyUSD} | ` +
-                    `Cash=$${cashAvailable.toFixed(2)}/$${session.startingBalance} | ` +
-                    `Assets=${session.enabledAssets.join('/')} | Windows=${session.enabledWindows.join('/')}`
-                );
+            // Always poll spot prices when momentum mode is active (or might be activated)
+            if (session.strategyMode === 'momentum_hedge') {
+                await pollSpotPrices();
             }
 
             const markets = await fetchActiveMarkets();
-            const tradeable = markets.filter(
-                (m) => session.enabledAssets.includes(m.asset) && session.enabledWindows.includes(m.window)
-            );
-
             const cashLeft = { value: cashAvailable };
             const BATCH = 8;
-            for (let i = 0; i < tradeable.length; i += BATCH) {
-                if (cashLeft.value < session.perBuyUSD) break;
-                const batch = tradeable.slice(i, i + BATCH);
-                await Promise.all(batch.map((m) => processMarket(m, session, cashLeft)));
+
+            if (session.strategyMode === 'momentum_hedge') {
+                if (cycle % 12 === 0) {
+                    const btcMom = getMomentumPct('BTC', session.momentumWindowSec);
+                    const ethMom = getMomentumPct('ETH', session.momentumWindowSec);
+                    const solMom = getMomentumPct('SOL', session.momentumWindowSec);
+                    Logger.info(
+                        `[MOMENTUM] Cash=$${cashAvailable.toFixed(2)}/$${session.startingBalance} | ` +
+                        `Bet ${session.bigBetUSD}/${session.smallBetUSD} | Threshold ${session.momentumThresholdPct}% over ${session.momentumWindowSec}s | ` +
+                        `BTC=${btcMom?.toFixed(2) ?? '?'}% ETH=${ethMom?.toFixed(2) ?? '?'}% SOL=${solMom?.toFixed(2) ?? '?'}%`
+                    );
+                }
+                const tradeable = markets.filter((m) => session.enabledAssets.includes(m.asset));
+                for (let i = 0; i < tradeable.length; i += BATCH) {
+                    if (cashLeft.value < session.bigBetUSD + session.smallBetUSD) break;
+                    const batch = tradeable.slice(i, i + BATCH);
+                    await Promise.all(batch.map((m) => processMarketMomentum(m, session, cashLeft)));
+                }
+            } else {
+                // Default: dual_threshold
+                if (cycle % 12 === 0) {
+                    Logger.info(
+                        `[DUAL-THRESHOLD] Threshold=$${session.threshold} | Per-buy=$${session.perBuyUSD} | ` +
+                        `Cash=$${cashAvailable.toFixed(2)}/$${session.startingBalance} | ` +
+                        `Assets=${session.enabledAssets.join('/')} | Windows=${session.enabledWindows.join('/')}`
+                    );
+                }
+                const tradeable = markets.filter(
+                    (m) => session.enabledAssets.includes(m.asset) && session.enabledWindows.includes(m.window)
+                );
+                for (let i = 0; i < tradeable.length; i += BATCH) {
+                    if (cashLeft.value < session.perBuyUSD) break;
+                    const batch = tradeable.slice(i, i + BATCH);
+                    await Promise.all(batch.map((m) => processMarket(m, session, cashLeft)));
+                }
             }
 
             if (cycle % 5 === 0) {
                 await checkResolutions();
             }
         } catch (e) {
-            Logger.warning(`[DUAL-THRESHOLD] Cycle error: ${e instanceof Error ? e.message : e}`);
+            Logger.warning(`[STRATEGY] Cycle error: ${e instanceof Error ? e.message : e}`);
         }
 
         if (!isRunning) break;
         await sleep(POLL_INTERVAL_MS);
     }
 
-    Logger.info('[DUAL-THRESHOLD] Service stopped');
+    Logger.info('[STRATEGY] Service stopped');
 };
 
 export default dualThresholdStrategy;

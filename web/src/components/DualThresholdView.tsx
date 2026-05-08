@@ -7,7 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 
+type StrategyMode = 'dual_threshold' | 'momentum_hedge';
+
 interface Session {
+  strategyMode: StrategyMode;
   active: boolean;
   startingBalance: number;
   threshold: number;
@@ -15,6 +18,10 @@ interface Session {
   slippageBps: number;
   enabledAssets: string[];
   enabledWindows: string[];
+  momentumWindowSec: number;
+  momentumThresholdPct: number;
+  bigBetUSD: number;
+  smallBetUSD: number;
   startedAt: number;
 }
 
@@ -90,15 +97,25 @@ export function DualThresholdView() {
   const [slippagePercent, setSlippagePercent] = useState('20');
   const [enabledAssets, setEnabledAssets] = useState<string[]>(['BTC', 'ETH', 'SOL']);
   const [enabledWindows, setEnabledWindows] = useState<string[]>(['15m']);
+  const [strategyMode, setStrategyMode] = useState<StrategyMode>('dual_threshold');
+  const [momentumWindow, setMomentumWindow] = useState('300');
+  const [momentumThreshold, setMomentumThreshold] = useState('0.10');
+  const [bigBet, setBigBet] = useState('1.5');
+  const [smallBet, setSmallBet] = useState('0.5');
   const formInitialized = useRef(false);
 
   const syncForm = useCallback((s: Session) => {
+    setStrategyMode(s.strategyMode || 'dual_threshold');
     setStartingBalance(String(s.startingBalance));
     setThreshold(String(s.threshold));
     setPerBuyUSD(String(s.perBuyUSD));
     setSlippagePercent(String((s.slippageBps || 0) / 100));
     setEnabledAssets(s.enabledAssets);
     setEnabledWindows(s.enabledWindows && s.enabledWindows.length > 0 ? s.enabledWindows : ['15m']);
+    setMomentumWindow(String(s.momentumWindowSec || 300));
+    setMomentumThreshold(String(s.momentumThresholdPct ?? 0.10));
+    setBigBet(String(s.bigBetUSD ?? 1.5));
+    setSmallBet(String(s.smallBetUSD ?? 0.5));
   }, []);
 
   const fetchStats = useCallback(async (silent = false) => {
@@ -141,12 +158,17 @@ export function DualThresholdView() {
     try {
       const body = {
         action,
+        strategyMode,
         startingBalance: Number(startingBalance),
         threshold: Number(threshold),
         perBuyUSD: Number(perBuyUSD),
         slippageBps: Math.round(Number(slippagePercent) * 100),
         enabledAssets,
         enabledWindows,
+        momentumWindowSec: Number(momentumWindow),
+        momentumThresholdPct: Number(momentumThreshold),
+        bigBetUSD: Number(bigBet),
+        smallBetUSD: Number(smallBet),
       };
       const res = await fetch('/api/dual-threshold-stats', {
         method: 'POST',
@@ -224,87 +246,136 @@ export function DualThresholdView() {
               </Badge>
             )}
           </CardTitle>
-          <CardDescription>Backtest target: $0.10 threshold, $1/buy, 20% slippage, BTC+SOL</CardDescription>
+          <CardDescription>
+            {strategyMode === 'momentum_hedge'
+              ? 'Spot-price momentum hedge: bet 1.5/0.5 split based on 5min crypto trend. Backtest: 64% accuracy, +8.5% ROI.'
+              : 'Dual-side threshold: buy each side when price dips below threshold. Backtest: +10.4% ROI on 15m markets.'}
+          </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Mode selector */}
+          <div className="mb-4 rounded-lg border border-muted/40 p-3">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">Strategy Mode</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setStrategyMode('dual_threshold')}
+                className={`rounded-md border px-3 py-1.5 text-xs transition ${
+                  strategyMode === 'dual_threshold'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-muted/40 text-muted-foreground hover:border-muted'
+                }`}
+              >
+                Dual Threshold
+              </button>
+              <button
+                type="button"
+                onClick={() => setStrategyMode('momentum_hedge')}
+                className={`rounded-md border px-3 py-1.5 text-xs transition ${
+                  strategyMode === 'momentum_hedge'
+                    ? 'border-primary bg-primary/10 text-primary'
+                    : 'border-muted/40 text-muted-foreground hover:border-muted'
+                }`}
+              >
+                Momentum Hedge
+              </button>
+            </div>
+            <p className="mt-2 text-[10px] text-muted-foreground/60">
+              ⚠️ Switching strategies requires resetting the session (deletes positions).
+            </p>
+          </div>
+
+          {/* Common settings */}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <div>
               <label className="text-xs text-muted-foreground">Starting Balance ($)</label>
-              <Input
-                type="number"
-                value={startingBalance}
-                onChange={(e) => setStartingBalance(e.target.value)}
-                className="mt-1"
-                step="10"
-                min="10"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Threshold ($)</label>
-              <Input
-                type="number"
-                value={threshold}
-                onChange={(e) => setThreshold(e.target.value)}
-                className="mt-1"
-                step="0.01"
-                min="0.01"
-                max="0.50"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground">Per Buy ($)</label>
-              <Input
-                type="number"
-                value={perBuyUSD}
-                onChange={(e) => setPerBuyUSD(e.target.value)}
-                className="mt-1"
-                step="0.5"
-                min="0.5"
-              />
+              <Input type="number" value={startingBalance} onChange={(e) => setStartingBalance(e.target.value)} className="mt-1" step="10" min="10" />
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Slippage (%)</label>
-              <Input
-                type="number"
-                value={slippagePercent}
-                onChange={(e) => setSlippagePercent(e.target.value)}
-                className="mt-1"
-                step="1"
-                min="0"
-                max="80"
-              />
+              <Input type="number" value={slippagePercent} onChange={(e) => setSlippagePercent(e.target.value)} className="mt-1" step="1" min="0" max="80" />
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-6">
-            <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Enabled Assets</p>
-              <div className="flex gap-2">
-                {ALL_ASSETS.map((asset) => (
-                  <div key={asset} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
-                    <span className="text-xs font-mono">{asset}</span>
-                    <Switch checked={enabledAssets.includes(asset)} onCheckedChange={() => toggleAsset(asset)} />
-                  </div>
-                ))}
+          {/* Dual-threshold params */}
+          {strategyMode === 'dual_threshold' && (
+            <>
+              <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div>
+                  <label className="text-xs text-muted-foreground">Threshold ($)</label>
+                  <Input type="number" value={threshold} onChange={(e) => setThreshold(e.target.value)} className="mt-1" step="0.01" min="0.01" max="0.50" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Per Buy ($)</label>
+                  <Input type="number" value={perBuyUSD} onChange={(e) => setPerBuyUSD(e.target.value)} className="mt-1" step="0.5" min="0.5" />
+                </div>
               </div>
-            </div>
-            <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
-                Time Windows
-                <span className="ml-2 text-[10px] text-muted-foreground/60">
-                  (15m is ~50× more profitable than 5m per backtest)
-                </span>
-              </p>
-              <div className="flex gap-2">
-                {ALL_WINDOWS.map((window) => (
-                  <div key={window} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
-                    <span className="text-xs font-mono">{window}</span>
-                    <Switch checked={enabledWindows.includes(window)} onCheckedChange={() => toggleWindow(window)} />
+
+              <div className="mt-4 flex flex-wrap gap-6">
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Enabled Assets</p>
+                  <div className="flex gap-2">
+                    {ALL_ASSETS.map((asset) => (
+                      <div key={asset} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
+                        <span className="text-xs font-mono">{asset}</span>
+                        <Switch checked={enabledAssets.includes(asset)} onCheckedChange={() => toggleAsset(asset)} />
+                      </div>
+                    ))}
                   </div>
-                ))}
+                </div>
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">
+                    Time Windows
+                    <span className="ml-2 text-[10px] text-muted-foreground/60">(15m is ~50× more profitable than 5m)</span>
+                  </p>
+                  <div className="flex gap-2">
+                    {ALL_WINDOWS.map((window) => (
+                      <div key={window} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
+                        <span className="text-xs font-mono">{window}</span>
+                        <Switch checked={enabledWindows.includes(window)} onCheckedChange={() => toggleWindow(window)} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
+
+          {/* Momentum hedge params */}
+          {strategyMode === 'momentum_hedge' && (
+            <>
+              <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div>
+                  <label className="text-xs text-muted-foreground">Momentum Window (sec)</label>
+                  <Input type="number" value={momentumWindow} onChange={(e) => setMomentumWindow(e.target.value)} className="mt-1" step="60" min="60" max="900" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Momentum Threshold (%)</label>
+                  <Input type="number" value={momentumThreshold} onChange={(e) => setMomentumThreshold(e.target.value)} className="mt-1" step="0.05" min="0.01" max="2" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Big Bet ($) on prediction</label>
+                  <Input type="number" value={bigBet} onChange={(e) => setBigBet(e.target.value)} className="mt-1" step="0.5" min="0.5" />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">Hedge Bet ($) on opposite</label>
+                  <Input type="number" value={smallBet} onChange={(e) => setSmallBet(e.target.value)} className="mt-1" step="0.5" min="0" />
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">Enabled Assets (15m markets only)</p>
+                <div className="flex gap-2">
+                  {ALL_ASSETS.map((asset) => (
+                    <div key={asset} className="flex items-center gap-2 rounded-md border border-muted/40 px-3 py-1.5">
+                      <span className="text-xs font-mono">{asset}</span>
+                      <Switch checked={enabledAssets.includes(asset)} onCheckedChange={() => toggleAsset(asset)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="mt-4 flex flex-wrap gap-2">
             <Button size="sm" onClick={() => saveSession('update')} disabled={savingSession}>

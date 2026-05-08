@@ -19,13 +19,20 @@ async function getDb() {
 
 const DEFAULT_SESSION = {
   _id: SESSION_ID,
+  strategyMode: 'dual_threshold',
   active: true,
   startingBalance: 100,
+  // dual_threshold params
   threshold: 0.10,
   perBuyUSD: 1.0,
   slippageBps: 2000,
   enabledAssets: ['BTC', 'ETH', 'SOL'],
-  enabledWindows: ['15m'], // 15m default — ~50x more profitable than 5m per backtest
+  enabledWindows: ['15m'],
+  // momentum_hedge params (backtest: 64% accuracy, +8.5% ROI)
+  momentumWindowSec: 300,
+  momentumThresholdPct: 0.10,
+  bigBetUSD: 1.5,
+  smallBetUSD: 0.5,
   startedAt: 0,
 };
 
@@ -140,6 +147,7 @@ export async function GET() {
 
     return NextResponse.json({
       session: {
+        strategyMode: String(session.strategyMode || 'dual_threshold'),
         active: Boolean(session.active),
         startingBalance: Number(session.startingBalance) || 100,
         threshold: Number(session.threshold) || 0.1,
@@ -149,6 +157,10 @@ export async function GET() {
         enabledWindows: Array.isArray(session.enabledWindows) && session.enabledWindows.length > 0
           ? session.enabledWindows
           : ['15m'],
+        momentumWindowSec: Number(session.momentumWindowSec) || 300,
+        momentumThresholdPct: Number(session.momentumThresholdPct ?? 0.10),
+        bigBetUSD: Number(session.bigBetUSD ?? 1.5),
+        smallBetUSD: Number(session.smallBetUSD ?? 0.5),
         startedAt: Number(session.startedAt) || 0,
       },
       summary: {
@@ -216,6 +228,7 @@ export async function POST(request: Request) {
       await positionsCol.deleteMany({});
       const fresh = {
         _id: SESSION_ID,
+        strategyMode: String(body.strategyMode || 'dual_threshold'),
         active: true,
         startingBalance: Number(body.startingBalance) || 100,
         threshold: Number(body.threshold) || 0.1,
@@ -225,6 +238,10 @@ export async function POST(request: Request) {
         enabledWindows: Array.isArray(body.enabledWindows) && body.enabledWindows.length > 0
           ? body.enabledWindows
           : ['15m'],
+        momentumWindowSec: Number(body.momentumWindowSec) || 300,
+        momentumThresholdPct: Number(body.momentumThresholdPct ?? 0.10),
+        bigBetUSD: Number(body.bigBetUSD ?? 1.5),
+        smallBetUSD: Number(body.smallBetUSD ?? 0.5),
         startedAt: Math.floor(Date.now() / 1000),
         updatedAt: new Date(),
       };
@@ -244,6 +261,11 @@ export async function POST(request: Request) {
     if (body.slippageBps !== undefined) update.slippageBps = Number(body.slippageBps);
     if (Array.isArray(body.enabledAssets)) update.enabledAssets = body.enabledAssets;
     if (Array.isArray(body.enabledWindows)) update.enabledWindows = body.enabledWindows;
+    if (typeof body.strategyMode === 'string') update.strategyMode = body.strategyMode;
+    if (body.momentumWindowSec !== undefined) update.momentumWindowSec = Number(body.momentumWindowSec);
+    if (body.momentumThresholdPct !== undefined) update.momentumThresholdPct = Number(body.momentumThresholdPct);
+    if (body.bigBetUSD !== undefined) update.bigBetUSD = Number(body.bigBetUSD);
+    if (body.smallBetUSD !== undefined) update.smallBetUSD = Number(body.smallBetUSD);
 
     if (action === 'start') update.startedAt = Math.floor(Date.now() / 1000);
 
