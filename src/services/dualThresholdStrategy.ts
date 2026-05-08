@@ -668,9 +668,12 @@ const dualThresholdStrategy = async (): Promise<void> => {
                     const btcMom = getMomentumPct('BTC', session.momentumWindowSec);
                     const ethMom = getMomentumPct('ETH', session.momentumWindowSec);
                     const solMom = getMomentumPct('SOL', session.momentumWindowSec);
+                    const betDesc = session.useScaledBets
+                        ? `SCALED tiers (${session.tierBets.map(t => `${t.minPct}-${t.maxPct}%:$${t.betUSD}`).join(', ')})`
+                        : `Fixed ${session.bigBetUSD}/${session.smallBetUSD}`;
                     Logger.info(
                         `[MOMENTUM] Cash=$${cashAvailable.toFixed(2)}/$${session.startingBalance} | ` +
-                        `Bet ${session.bigBetUSD}/${session.smallBetUSD} | Threshold ${session.momentumThresholdPct}% over ${session.momentumWindowSec}s | ` +
+                        `${betDesc} | Threshold ${session.momentumThresholdPct}% over ${session.momentumWindowSec}s | ` +
                         `BTC=${btcMom?.toFixed(2) ?? '?'}% ETH=${ethMom?.toFixed(2) ?? '?'}% SOL=${solMom?.toFixed(2) ?? '?'}%`
                     );
                 }
