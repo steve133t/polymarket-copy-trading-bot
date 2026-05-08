@@ -42,8 +42,13 @@ const ACTIVE_SERIES = [
     { id: 10423, asset: 'SOL', window: '15m' },
 ];
 
-// Coinbase symbols for spot price (used by momentum strategy)
-const SPOT_SYMBOLS: Record<string, string> = {
+// Spot price sources (used by momentum strategy). Multiple providers for resilience.
+const KRAKEN_SYMBOLS: Record<string, string> = {
+    BTC: 'XBTUSDT',
+    ETH: 'ETHUSDT',
+    SOL: 'SOLUSDT',
+};
+const COINBASE_SYMBOLS: Record<string, string> = {
     BTC: 'BTC-USD',
     ETH: 'ETH-USD',
     SOL: 'SOL-USD',
@@ -161,11 +166,75 @@ interface PriceCache { ts: number; price: number; }
 const spotPriceHistory: Record<string, PriceCache[]> = { BTC: [], ETH: [], SOL: [] };
 const SPOT_HISTORY_MAX_SEC = 600; // Keep 10 min of history
 
+// Bootstrap spot price history with Kraken 1-min OHLC on startup
+// so momentum strategy can fire immediately rather than waiting 5+ minutes.
+async function bootstrapSpotHistory(): Promise<void> {
+    Logger.info('[MOMENTUM] Bootstrapping spot price history from Kraken...');
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const [asset, symbol] of Object.entries(KRAKEN_SYMBOLS)) {
+        try {
+            // Kraken OHLC: 1-minute candles, returns ~720 candles by default
+            // We only need last 10 minutes
+            const since = nowSec - 600;
+            const res = await axios.get(
+                `https://api.kraken.com/0/public/OHLC?pair=${symbol}&interval=1&since=${since}`,
+                { timeout: 8000 }
+            );
+            const result = res.data?.result || {};
+            const ohlcKey = Object.keys(result).find(k => k !== 'last');
+            if (!ohlcKey) continue;
+            const candles = result[ohlcKey] as any[];
+            for (const candle of candles) {
+                // [time, open, high, low, close, vwap, volume, count]
+                const ts = Number(candle[0]);
+                const close = Number(candle[4]);
+                if (close > 0 && ts > 0) {
+                    spotPriceHistory[asset].push({ ts, price: close });
+                }
+            }
+            // Sort chronologically and trim to history window
+            spotPriceHistory[asset] = spotPriceHistory[asset]
+                .sort((a, b) => a.ts - b.ts)
+                .filter(p => nowSec - p.ts < SPOT_HISTORY_MAX_SEC);
+            Logger.info(`[MOMENTUM]   ${asset}: bootstrapped ${spotPriceHistory[asset].length} price points`);
+        } catch (e) {
+            Logger.warning(`[MOMENTUM]   ${asset} bootstrap failed: ${e instanceof Error ? e.message : e}`);
+        }
+    }
+}
+
 async function pollSpotPrices(): Promise<void> {
     const nowSec = Math.floor(Date.now() / 1000);
-    for (const [asset, symbol] of Object.entries(SPOT_SYMBOLS)) {
+
+    // Try Kraken first (single batched request for all assets)
+    try {
+        const krakenPairs = Object.values(KRAKEN_SYMBOLS).join(',');
+        const res = await axios.get(
+            `https://api.kraken.com/0/public/Ticker?pair=${krakenPairs}`,
+            { timeout: 5000 }
+        );
+        const result = res.data?.result || {};
+        for (const [asset, symbol] of Object.entries(KRAKEN_SYMBOLS)) {
+            const data = result[symbol];
+            if (data && Array.isArray(data.c)) {
+                const price = Number(data.c[0]) || 0;
+                if (price > 0) {
+                    spotPriceHistory[asset].push({ ts: nowSec, price });
+                    spotPriceHistory[asset] = spotPriceHistory[asset].filter(p => nowSec - p.ts < SPOT_HISTORY_MAX_SEC);
+                }
+            }
+        }
+        // If we got at least one price from Kraken, we're done
+        if (Object.values(spotPriceHistory).some(h => h.length > 0 && h[h.length - 1].ts === nowSec)) {
+            return;
+        }
+    } catch {
+        // Kraken failed — fall through to Coinbase
+    }
+
+    // Fallback: Coinbase Exchange
+    for (const [asset, symbol] of Object.entries(COINBASE_SYMBOLS)) {
         try {
-            // Coinbase ticker — current price
             const res = await axios.get(
                 `https://api.exchange.coinbase.com/products/${symbol}/ticker`,
                 { timeout: 5000 }
@@ -173,7 +242,6 @@ async function pollSpotPrices(): Promise<void> {
             const price = Number(res.data?.price) || 0;
             if (price > 0) {
                 spotPriceHistory[asset].push({ ts: nowSec, price });
-                // Trim old entries
                 spotPriceHistory[asset] = spotPriceHistory[asset].filter(p => nowSec - p.ts < SPOT_HISTORY_MAX_SEC);
             }
         } catch {
@@ -387,8 +455,8 @@ async function processMarketMomentum(market: any, session: SessionConfig, cashLe
     const windowSec = market.window === '15m' ? 15 * 60 : 5 * 60;
     const closeTs = market.closeTs;
     const elapsed = windowSec - (closeTs - nowSec);
-    // Wait 60s into the window so spot momentum reflects real activity, but don't enter past 4 min in
-    if (elapsed < 60 || elapsed > 4 * 60) return;
+    // Enter as soon as we see a market — don't enter past 4 min in (signal stale, prices moved)
+    if (elapsed < 0 || elapsed > 4 * 60) return;
 
     // Compute momentum signal
     const momentumPct = getMomentumPct(market.asset, session.momentumWindowSec);
@@ -400,8 +468,8 @@ async function processMarketMomentum(market: any, session: SessionConfig, cashLe
 
     // Get current Polymarket prices for both sides
     const trades = await fetchRecentTrades(market.conditionId);
-    if (trades.length === 0) return;
 
+    // For brand-new markets with no trades yet, assume $0.50/$0.50 starting prices
     const lastPrice: Record<number, number> = { 0: -1, 1: -1 };
     for (const t of trades) {
         const idx = Number(t.outcomeIndex);
@@ -412,9 +480,15 @@ async function processMarketMomentum(market: any, session: SessionConfig, cashLe
     }
     if (lastPrice[0] === -1 && lastPrice[1] !== -1) lastPrice[0] = Math.max(0.001, 1 - lastPrice[1]);
     if (lastPrice[1] === -1 && lastPrice[0] !== -1) lastPrice[1] = Math.max(0.001, 1 - lastPrice[0]);
+    // Both still unknown: assume balanced market just opened
+    if (lastPrice[0] === -1 && lastPrice[1] === -1) {
+        lastPrice[0] = 0.50;
+        lastPrice[1] = 0.50;
+    }
 
-    // Only bet if both prices are in 0.30-0.70 range (still uncertain market)
-    if (lastPrice[0] < 0.30 || lastPrice[0] > 0.70) return;
+    // Only bet if prices are still uncertain (between 0.25 and 0.75)
+    // Past that, the market has too much info baked in
+    if (lastPrice[0] < 0.25 || lastPrice[0] > 0.75) return;
 
     const slippage = session.slippageBps / 10000;
     // Buy both sides — big on predicted, small on hedge
@@ -517,6 +591,13 @@ export const stopDualThresholdStrategy = (): void => {
 
 const dualThresholdStrategy = async (): Promise<void> => {
     Logger.info('[DUAL-THRESHOLD] Service starting...');
+
+    // Bootstrap spot price history so momentum can fire on first cycle
+    try {
+        await bootstrapSpotHistory();
+    } catch (e) {
+        Logger.warning(`[MOMENTUM] Bootstrap error: ${e instanceof Error ? e.message : e}`);
+    }
 
     let cycle = 0;
     while (isRunning) {
